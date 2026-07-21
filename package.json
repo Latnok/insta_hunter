@@ -1,0 +1,45 @@
+{
+  "name": "instagram-hunter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Private admin application for discovering and reviewing Instagram clothing bloggers",
+  "engines": {
+    "node": ">=20.11.0 <21"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "start:web": "node src/server.js",
+    "start:worker": "node src/worker.js",
+    "dev": "node --watch src/server.js",
+    "worker:dev": "node --watch src/worker.js",
+    "db:init": "node src/cli/init-schema.js",
+    "seed": "node src/cli/seed.js",
+    "password:hash": "node src/cli/hash-password.js",
+    "test": "node --test",
+    "test:integration": "node --test --test-concurrency=1 test/integration/*.test.js",
+    "test:watch": "node --test --watch",
+    "test:coverage": "node --experimental-test-coverage --test",
+    "lint": "npm run check",
+    "check": "node scripts/check-syntax.mjs"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "connect-pg-simple": "^10.0.0",
+    "csv-parse": "^6.1.0",
+    "ejs": "^3.1.10",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.0.1",
+    "express-session": "^1.18.2",
+    "helmet": "^8.1.0",
+    "htmx.org": "^2.0.6",
+    "multer": "^2.0.2",
+    "pg": "^8.16.3",
+    "pino": "^9.7.0",
+    "pino-http": "^10.5.0",
+    "zod": "^4.0.5"
+  },
+  "devDependencies": {
+    "supertest": "^7.1.4"
+  }
+}

@@ -1,0 +1,12 @@
+{$APP_DOMAIN} {
+  encode zstd gzip
+  request_body {
+    max_size 3MB
+  }
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    X-Content-Type-Options "nosniff"
+    Referrer-Policy "same-origin"
+  }
+  reverse_proxy web:3000
+}

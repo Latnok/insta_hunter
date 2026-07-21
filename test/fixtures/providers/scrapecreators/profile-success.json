@@ -1,0 +1,14 @@
+{
+  "user": {
+    "pk": "scrape-user-301",
+    "username": "fixture_style",
+    "full_name": "Fixture Style",
+    "biography": "Sanitized fallback fixture",
+    "profile_pic_url": "https://cdn.example.invalid/scrape/avatar.jpg",
+    "follower_count": 12600,
+    "following_count": 318,
+    "media_count": 88,
+    "is_verified": false,
+    "is_private": false
+  }
+}

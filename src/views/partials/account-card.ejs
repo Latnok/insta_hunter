@@ -1,0 +1,49 @@
+<article class="card account-card">
+  <button class="card-open" hx-get="/ui/accounts/<%= account.id %>" hx-target="#drawer" hx-swap="innerHTML" aria-label="Open <%= account.username %>">
+    <div class="avatar-wrap">
+      <% if (account.avatar_url) { %><img class="avatar" src="<%= account.avatar_url %>" alt=""><% } else { %><span class="avatar placeholder">@</span><% } %>
+      <span class="status-dot <%= account.profile_status || 'unknown' %>"></span>
+    </div>
+    <div class="card-main">
+      <strong>@<%= account.username %></strong>
+      <span class="muted one-line"><%= account.display_name || account.bio || '—' %></span>
+    </div>
+  </button>
+  <div class="metrics">
+    <span><strong><%= account.followers == null ? '—' : Number(account.followers).toLocaleString(locale) %></strong><small>followers</small></span>
+    <span><strong><%= account.reels_count %></strong><small>reels</small></span>
+    <span><strong><%= account.useful_reels_count %></strong><small>useful</small></span>
+  </div>
+  <div class="chips">
+    <span class="chip status-<%= account.lifecycle_status %>"><%= account.lifecycle_status %></span>
+    <% if (account.pipeline_status) { %><span class="chip"><%= account.pipeline_status %></span><% } %>
+    <% if (account.is_stale) { %><span class="chip">stale</span><% } %>
+    <% if (account.recommendation) { %><span class="chip recommendation"><%= account.recommendation.replace('recommended_', '') %> · <%= account.confidence %>%</span><% } %>
+  </div>
+  <div class="card-actions">
+    <% if (mode === 'candidates' && account.lifecycle_status === 'candidate') { %>
+      <form method="post" action="/accounts/<%= account.id %>/pipeline">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="reelsLimit" value="<%= config.REELS_DEFAULT_LIMIT %>">
+        <button class="button secondary"><%= t('process') %></button>
+      </form>
+      <form method="post" action="/accounts/<%= account.id %>/approve" data-confirm="Approve @<%= account.username %>?">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button class="button success" <%= account.recommendation ? '' : 'disabled' %>><%= t('approve') %></button>
+      </form>
+      <form method="post" action="/accounts/<%= account.id %>/reject" data-confirm="Reject @<%= account.username %>?">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="reason" value="Rejected from candidate card">
+        <button class="button danger"><%= t('reject') %></button>
+      </form>
+    <% } %>
+    <% if (mode === 'bloggers' && account.lifecycle_status === 'approved') { %>
+      <form method="post" action="/accounts/<%= account.id %>/archive" data-confirm="Archive @<%= account.username %>?">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="button secondary"><%= t('archive') %></button>
+      </form>
+    <% } %>
+    <% if (mode === 'bloggers' && account.lifecycle_status === 'archived') { %>
+      <form method="post" action="/accounts/<%= account.id %>/restore">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="button secondary"><%= t('restore') %></button>
+      </form>
+    <% } %>
+  </div>
+</article>

@@ -1,0 +1,17 @@
+{
+  "items": [
+    {
+      "pk": "scrape-media-401",
+      "code": "SCRFIXTURE",
+      "caption": { "text": "Sanitized fallback reel" },
+      "taken_at": 1700000100,
+      "ig_play_count": 5500,
+      "like_count": 260,
+      "comment_count": 18,
+      "display_uri": "https://cdn.example.invalid/scrape/reel.jpg",
+      "video_versions": [
+        { "url": "https://cdn.example.invalid/scrape/reel.mp4" }
+      ]
+    }
+  ]
+}

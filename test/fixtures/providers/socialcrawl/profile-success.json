@@ -1,0 +1,21 @@
+{
+  "data": {
+    "author": {
+      "id": "sc-user-101",
+      "username": "fixture_style",
+      "full_name": "Fixture Style",
+      "biography": "Sanitized profile fixture",
+      "profile_pic_url": "https://cdn.example.invalid/socialcrawl/avatar.jpg",
+      "follower_count": 12500,
+      "following_count": 320,
+      "media_count": 87,
+      "is_verified": false,
+      "is_private": false
+    },
+    "computed": {
+      "engagement_rate": 0.041,
+      "language": "ru",
+      "content_category": "fashion"
+    }
+  }
+}

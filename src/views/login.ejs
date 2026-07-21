@@ -1,0 +1,14 @@
+<%- include('partials/head', { title: t('login') }) %>
+<main class="auth-shell">
+  <form class="auth-card" method="post" action="/auth/login">
+    <div class="brand centered"><span class="brand-mark">IH</span><span>Instagram Hunter</span></div>
+    <h1><%= t('login') %></h1>
+    <% if (error) { %><p class="error-text"><%= error %></p><% } %>
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <input type="hidden" name="locale" value="<%= locale %>">
+    <label><span><%= t('username') %></span><input name="username" autocomplete="username" required autofocus></label>
+    <label><span><%= t('password') %></span><input type="password" name="password" autocomplete="current-password" required></label>
+    <button class="button primary full"><%= t('login') %></button>
+  </form>
+</main>
+<%- include('partials/foot') %>

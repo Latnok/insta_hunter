@@ -1,0 +1,114 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: instagram_hunter
+      POSTGRES_USER: instagram_hunter
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U instagram_hunter -d instagram_hunter"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [internal]
+
+  schema:
+    build: .
+    command: ["node", "src/cli/init-schema.js"]
+    env_file: ${ENV_FILE:-.env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [internal]
+    restart: "no"
+
+  seed:
+    build: .
+    command: ["node", "src/cli/seed.js"]
+    env_file: ${ENV_FILE:-.env}
+    depends_on:
+      schema:
+        condition: service_completed_successfully
+    networks: [internal]
+    restart: "no"
+
+  web:
+    build: .
+    command: ["node", "src/server.js"]
+    restart: unless-stopped
+    env_file: ${ENV_FILE:-.env}
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    networks: [internal]
+
+  worker:
+    build: .
+    command: ["node", "src/worker.js"]
+    restart: unless-stopped
+    env_file: ${ENV_FILE:-.env}
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "src/cli/worker-health.js"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks: [internal]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?APP_DOMAIN is required}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+    networks: [internal]
+
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: instagram_hunter
+      PGUSER: instagram_hunter
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
+    volumes:
+      - ./scripts/backup-loop.sh:/usr/local/bin/backup-loop.sh:ro
+      - ./scripts/backup-once.sh:/usr/local/bin/backup-once.sh:ro
+      - postgres-backups:/backups
+    command: ["sh", "/usr/local/bin/backup-loop.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [internal]
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  postgres-backups:
+  caddy-data:
+  caddy-config:

@@ -1,0 +1,8 @@
+{
+  "success": true,
+  "handle": "missing_fixture",
+  "userId": null,
+  "message": "Account does not exist",
+  "error": "not_found",
+  "errorStatus": 404
+}

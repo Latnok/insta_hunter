@@ -1,0 +1,6 @@
+{
+  "error": {
+    "message": "profile not found",
+    "status": 404
+  }
+}

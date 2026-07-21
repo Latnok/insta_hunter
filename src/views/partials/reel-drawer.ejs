@@ -1,0 +1,8 @@
+<div class="drawer-header"><div><small>reel</small><h2>@<%= reel.username %></h2></div><button class="icon-button" type="button" data-close-drawer>×</button></div>
+<div class="drawer-body">
+  <% if (reel.thumbnail_url) { %><img class="thumbnail" src="<%= reel.thumbnail_url %>" alt=""><% } %>
+  <section><a class="button secondary" href="<%= reel.reel_url %>" target="_blank" rel="noopener">Instagram ↗</a></section>
+  <section><h3>Metrics</h3><div class="metrics"><span><strong><%= reel.play_count ?? '—' %></strong><small>plays</small></span><span><strong><%= reel.like_count ?? '—' %></strong><small>likes</small></span><span><strong><%= reel.comment_count ?? '—' %></strong><small>comments</small></span></div></section>
+  <section><h3>Caption</h3><p><%= reel.caption || '—' %></p></section>
+  <section><h3>Transcript</h3><div class="chips"><span class="chip"><%= reel.transcript_status %></span><span class="chip"><%= reel.transcript_source || 'no source' %></span><span class="chip"><%= reel.transcript_quality || 'unclassified' %></span></div><p><%= reel.transcript_text || '—' %></p><small class="muted"><%= reel.transcript_quality_reason || reel.transcript_error || '' %></small></section>
+</div>

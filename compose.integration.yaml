@@ -1,0 +1,27 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: instagram_hunter_test
+      POSTGRES_USER: instagram_hunter_test
+      POSTGRES_PASSWORD: integration-only
+    ports:
+      - "127.0.0.1:${INTEGRATION_POSTGRES_PORT:-54329}:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U instagram_hunter_test -d instagram_hunter_test"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+
+  test:
+    build:
+      context: .
+      target: test
+    environment:
+      TEST_DATABASE_URL: postgresql://instagram_hunter_test:integration-only@postgres:5432/instagram_hunter_test
+    command: ["npm", "run", "test:integration"]
+    depends_on:
+      postgres:
+        condition: service_healthy

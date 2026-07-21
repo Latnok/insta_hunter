@@ -1,0 +1,21 @@
+<header class="topbar">
+  <a class="brand" href="/candidates"><span class="brand-mark">IH</span><span>Instagram Hunter</span></a>
+  <nav class="tabs" aria-label="Primary">
+    <a class="tab <%= active === 'candidates' ? 'active' : '' %>" href="/candidates"><%= t('candidates') %></a>
+    <a class="tab <%= active === 'bloggers' ? 'active' : '' %>" href="/bloggers"><%= t('bloggers') %></a>
+    <a class="tab <%= active === 'reels' ? 'active' : '' %>" href="/reels"><%= t('reels') %></a>
+    <a class="tab <%= active === 'queue' ? 'active' : '' %>" href="/queue"><%= t('queue') %></a>
+  </nav>
+  <div class="top-actions">
+    <form method="post" action="/preferences/language" class="inline-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="locale" value="<%= locale === 'ru' ? 'en' : 'ru' %>">
+      <button class="icon-button" aria-label="Change language"><%= locale.toUpperCase() %></button>
+    </form>
+    <a class="icon-button <%= active === 'settings' ? 'active' : '' %>" href="/settings" aria-label="<%= t('settings') %>">⚙</a>
+    <form method="post" action="/auth/logout" class="inline-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <button class="icon-button" aria-label="<%= t('logout') %>">↪</button>
+    </form>
+  </div>
+</header>

@@ -1,0 +1,19 @@
+{
+  "data": {
+    "items": [
+      {
+        "media": {
+          "id": "sc-media-201",
+          "shortcode": "SCFIXTURE",
+          "caption": { "text": "Sanitized reel" },
+          "taken_at": 1700000000,
+          "play_count": 4400,
+          "like_count": 210,
+          "comment_count": 12,
+          "thumbnail_url": "https://cdn.example.invalid/socialcrawl/reel.jpg",
+          "video_url": "https://cdn.example.invalid/socialcrawl/reel.mp4"
+        }
+      }
+    ]
+  }
+}

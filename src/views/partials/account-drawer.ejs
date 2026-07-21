@@ -1,0 +1,36 @@
+<div class="drawer-header">
+  <div><small><%= account.lifecycle_status %></small><h2>@<%= account.username %></h2></div>
+  <button class="icon-button" type="button" data-close-drawer>×</button>
+</div>
+<div class="drawer-body">
+  <section class="profile-hero">
+    <% if (account.avatar_url) { %><img class="avatar large" src="<%= account.avatar_url %>" alt=""><% } %>
+    <div><strong><%= account.display_name || '—' %></strong><p><%= account.bio || '—' %></p><a href="<%= account.instagram_url %>" target="_blank" rel="noopener">Instagram ↗</a></div>
+  </section>
+  <div class="metrics"><span><strong><%= account.followers ?? '—' %></strong><small>followers</small></span><span><strong><%= account.reels_count %></strong><small>reels</small></span><span><strong><%= account.useful_reels_count %></strong><small>useful</small></span></div>
+  <% if (account.recommendation) { %>
+    <section><h3>LLM evaluation</h3><div class="chips"><span class="chip recommendation"><%= account.recommendation %> · <%= account.confidence %>%</span></div><p><%= account.explanation %></p></section>
+  <% } else { %><section class="notice">LLM evaluation is not available yet.</section><% } %>
+  <% if (account.lifecycle_status === 'candidate') { %>
+    <section><h3>Pipeline</h3><form method="post" action="/accounts/<%= account.id %>/pipeline" class="stack">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <label>Reels <input type="number" name="reelsLimit" min="1" max="<%= config.REELS_MAX_LIMIT %>" value="<%= config.REELS_DEFAULT_LIMIT %>"></label>
+      <label><input type="checkbox" name="forceRefresh"> Force refresh</label>
+      <button class="button primary"><%= t('process') %></button>
+    </form></section>
+  <% } %>
+  <% if (account.lifecycle_status === 'approved') { %>
+    <section><h3>Refresh</h3><form method="post" action="/accounts/<%= account.id %>/pipeline" class="stack">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <label>Reels <input type="number" name="reelsLimit" min="1" max="<%= config.REELS_MAX_LIMIT %>" value="<%= config.REELS_DEFAULT_LIMIT %>"></label>
+      <label><input type="checkbox" name="forceRefresh"> Force refresh</label>
+      <button class="button primary"><%= t('refresh') %></button>
+    </form></section>
+  <% } %>
+  <section><h3>Reels</h3>
+    <% if (!reels.length) { %><p class="muted"><%= t('noData') %></p><% } %>
+    <% reels.forEach((reel) => { %><div class="list-row"><div><strong><%= reel.shortcode || reel.instagram_media_id %></strong><small><%= reel.transcript_status %> · <%= reel.transcript_quality || 'unclassified' %></small></div><a href="<%= reel.reel_url %>" target="_blank" rel="noopener">↗</a></div><% }) %>
+  </section>
+  <section><h3>Recent jobs</h3><% jobs.forEach((job) => { %><div class="list-row"><span><%= job.job_type %></span><span class="chip"><%= job.status %></span></div><% }) %></section>
+  <section><h3>Audit</h3><% audit.forEach((event) => { %><div class="list-row"><span><%= event.action %></span><time data-utc="<%= event.created_at.toISOString() %>"></time></div><% }) %></section>
+</div>
