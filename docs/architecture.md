@@ -174,7 +174,7 @@ Discovery выполняется как background job, поэтому HTTP-за
 - `priority`, `payload jsonb`, `result jsonb`
 - `dedupe_key text unique`
 - `attempts`, `max_attempts`, `available_at`
-- lease: `locked_by`, `locked_at`, `heartbeat_at`
+- lease: `locked_by`, `locked_at`, `heartbeat_at`, `current_attempt_id`; heartbeat и terminal update принимаются только от текущего worker/attempt
 - error summary и timestamps
 
 Типы: `discover_accounts`, `fetch_profile`, `fetch_reels`, `fetch_transcript`, `classify_transcript`, `evaluate_candidate`, `propose_criteria`.

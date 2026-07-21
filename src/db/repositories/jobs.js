@@ -20,7 +20,7 @@ export async function reserveJob(pool, workerId) {
     await client.query('begin');
     const result = await client.query(`
       select * from jobs
-      where status in ('pending','retry_wait') and available_at <= now()
+      where status in ('pending','retry_wait') and available_at <= now() and attempts < max_attempts
       order by priority desc, created_at
       for update skip locked limit 1
     `);
@@ -30,14 +30,16 @@ export async function reserveJob(pool, workerId) {
     }
     const job = result.rows[0];
     const attempt = job.attempts + 1;
+    const insertedAttempt = await client.query(`
+      insert into job_attempts(job_id, attempt_number, outcome) values ($1,$2,'running')
+      returning id
+    `, [job.id, attempt]);
+    const attemptId = insertedAttempt.rows[0].id;
     const updated = await client.query(`
       update jobs set status='running', attempts=$2, locked_by=$3, locked_at=now(), heartbeat_at=now(),
-                      started_at=coalesce(started_at, now()), updated_at=now()
+                      current_attempt_id=$4, started_at=coalesce(started_at, now()), updated_at=now()
       where id=$1 returning *
-    `, [job.id, attempt, workerId]);
-    await client.query(`
-      insert into job_attempts(job_id, attempt_number, outcome) values ($1,$2,'running')
-    `, [job.id, attempt]);
+    `, [job.id, attempt, workerId, attemptId]);
     await client.query('commit');
     return updated.rows[0];
   } catch (error) {
@@ -48,50 +50,77 @@ export async function reserveJob(pool, workerId) {
   }
 }
 
-export async function completeJob(pool, jobId, result = {}) {
-  await pool.query(`
-    with updated_attempt as (
+export async function completeJob(pool, job, result = {}) {
+  const completed = await pool.query(`
+    with fenced_job as (
+      select id, current_attempt_id from jobs
+      where id=$1 and status='running' and locked_by=$2 and current_attempt_id=$3
+      for update
+    ), updated_attempt as (
       update job_attempts set outcome='succeeded', finished_at=now()
-      where job_id=$1 and outcome='running'
+      where id in (select current_attempt_id from fenced_job) and outcome='running'
     )
-    update jobs set status='succeeded', result=$2, error_summary=null, finished_at=now(), updated_at=now(),
-                    locked_by=null, locked_at=null, heartbeat_at=null
-    where id=$1
-  `, [jobId, result]);
+    update jobs set status='succeeded', result=$4, error_summary=null, finished_at=now(), updated_at=now(),
+                    locked_by=null, locked_at=null, heartbeat_at=null, current_attempt_id=null
+    where id in (select id from fenced_job)
+    returning id
+  `, [job.id, job.locked_by, job.current_attempt_id, result]);
+  return completed.rowCount === 1;
 }
 
 export async function failJob(pool, job, error) {
   const delays = [30, 120, 600];
   const final = job.attempts >= job.max_attempts;
   const delaySeconds = delays[Math.min(job.attempts - 1, delays.length - 1)];
-  await pool.query(`
-    with updated_attempt as (
-      update job_attempts set outcome='failed', error_detail=$2, finished_at=now()
-      where job_id=$1 and outcome='running'
+  const failed = await pool.query(`
+    with fenced_job as (
+      select id, current_attempt_id from jobs
+      where id=$1 and status='running' and locked_by=$2 and current_attempt_id=$3
+      for update
+    ), updated_attempt as (
+      update job_attempts set outcome='failed', error_detail=$6, finished_at=now()
+      where id in (select current_attempt_id from fenced_job) and outcome='running'
     )
-    update jobs set status=$3, error_summary=$2,
-      available_at=case when $3='retry_wait' then now() + ($4 * interval '1 second') else available_at end,
-      finished_at=case when $3='failed' then now() else null end,
-      updated_at=now(), locked_by=null, locked_at=null, heartbeat_at=null
-    where id=$1
-  `, [job.id, String(error.message || error).slice(0, 2000), final ? 'failed' : 'retry_wait', delaySeconds]);
+    update jobs set status=$4, error_summary=$6,
+      available_at=case when $4='retry_wait' then now() + ($5 * interval '1 second') else available_at end,
+      finished_at=case when $4='failed' then now() else null end,
+      updated_at=now(), locked_by=null, locked_at=null, heartbeat_at=null, current_attempt_id=null
+    where id in (select id from fenced_job)
+    returning id
+  `, [job.id, job.locked_by, job.current_attempt_id, final ? 'failed' : 'retry_wait', delaySeconds,
+    String(error.message || error).slice(0, 2000)]);
+  return failed.rowCount === 1;
 }
 
-export async function heartbeatJob(pool, jobId, workerId) {
-  await pool.query(`update jobs set heartbeat_at=now(), updated_at=now() where id=$1 and locked_by=$2 and status='running'`, [jobId, workerId]);
+export async function heartbeatJob(pool, job) {
+  const result = await pool.query(`
+    update jobs set heartbeat_at=now(), updated_at=now()
+    where id=$1 and locked_by=$2 and current_attempt_id=$3 and status='running'
+    returning id
+  `, [job.id, job.locked_by, job.current_attempt_id]);
+  return result.rowCount === 1;
 }
 
 export async function recoverStaleJobs(pool, minutes = 10) {
   const result = await pool.query(`
-    with stale_jobs as (
-      update jobs set status='retry_wait', available_at=now(), locked_by=null, locked_at=null,
-                      heartbeat_at=null, error_summary='worker lease expired', updated_at=now()
+    with stale_candidates as (
+      select id, current_attempt_id, attempts >= max_attempts as final
+      from jobs
       where status='running' and coalesce(heartbeat_at, locked_at) < now() - ($1 * interval '1 minute')
-      returning id
+      for update skip locked
     ), closed_attempts as (
       update job_attempts set outcome='failed', error_detail='worker lease expired', finished_at=now()
-      where outcome='running' and job_id in (select id from stale_jobs)
-      returning job_id
+      where outcome='running' and id in (select current_attempt_id from stale_candidates)
+    ), stale_jobs as (
+      update jobs j set
+        status=case when stale.final then 'failed' else 'retry_wait' end,
+        available_at=case when stale.final then j.available_at else now() end,
+        finished_at=case when stale.final then now() else null end,
+        locked_by=null, locked_at=null, heartbeat_at=null, current_attempt_id=null,
+        error_summary='worker lease expired', updated_at=now()
+      from stale_candidates stale
+      where j.id=stale.id
+      returning j.id
     )
     select count(*)::int as recovered_count from stale_jobs
   `, [minutes]);

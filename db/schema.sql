@@ -180,6 +180,9 @@ create table job_attempts (
   unique(job_id, attempt_number)
 );
 
+alter table jobs
+  add column current_attempt_id bigint references job_attempts(id) on delete set null;
+
 create table llm_logs (
   id bigint generated always as identity primary key,
   purpose text not null check (purpose in ('candidate_evaluation','criteria_proposal')),

@@ -432,14 +432,14 @@ Definition of Done:
 - [x] Cover network, 404, 408, 429, 5xx, invalid JSON, empty result and non-retryable 400 branches without live API.
 - [x] Prove discovery creates candidate/source rows without enrichment jobs.
 - [x] Prove fresh profile/reels use cache while force refresh calls providers and upserts the existing reel.
-- [x] Pass 19/19 PostgreSQL integration tests and 40/40 default tests.
+- [x] Pass 22/22 PostgreSQL integration tests and 40/40 default tests.
 
 ## Debug-аудит — 2026-07-22
 
 Проверено локально:
 
 - `npm run check`: успешно, 50 JavaScript-файлов и 14 EJS-шаблонов.
-- `npm test`: 40 default-тестов успешно; отдельный PostgreSQL-прогон — 19/19.
+- `npm test`: 40 default-тестов успешно; отдельный PostgreSQL-прогон — 22/22.
 - `npm audit --omit=dev`: 0 известных уязвимостей.
 - Docker integration suite выполнен на одноразовой PostgreSQL 16; контейнеры, сеть, volume и тестовые образы удалены.
 - Состав первого Git-коммита проверен на секреты и временные артефакты.
@@ -447,9 +447,9 @@ Definition of Done:
 ### P0 — корректность и безопасность
 
 - [x] Зафиксировать воспроизводимый Git baseline: проверить отсутствие секретов и создать первый commit. Tag и push выполняются отдельно после решения о публикации.
-- [ ] Реализовать настоящий heartbeat долгих jobs: `heartbeatJob()` существует, но worker его не вызывает. Обновлять lease во время provider/ffmpeg/LLM операций и integration-тестом доказать, что живой job старше 10 минут не выдаётся второму worker.
-- [ ] Добавить fencing token/attempt ID во все `completeJob`/`failJob`: завершать job только если `status='running'`, `locked_by` и текущий attempt совпадают. Старый worker после lease recovery не должен перезаписывать результат нового attempt или закрывать все running attempts.
-- [ ] Исправить recovery на границе попыток: stale job с `attempts >= max_attempts` должен стать `failed`, а не безусловно `retry_wait`; покрыть crash на последней разрешённой попытке.
+- [x] Реализовать настоящий heartbeat долгих jobs: worker обновляет lease текущего attempt каждые 30 секунд; integration-тест доказывает, что живой job не выдаётся второму worker.
+- [x] Добавить fencing по `locked_by` и `current_attempt_id` во все `heartbeatJob`/`completeJob`/`failJob`; результат старого worker после recovery отбрасывается.
+- [x] Исправить recovery на границе попыток: stale job с `attempts >= max_attempts` становится `failed`; crash на последней разрешённой попытке покрыт тестом.
 - [ ] Сделать cancel/reject/archive согласованными с pipeline: атомарно переводить активный `pipeline_run` в `cancelled`, не позволять уже running job создавать transcript/classify/evaluate jobs после смены lifecycle, и не разрешать manual retry для rejected/archived account или отменённого pipeline.
 - [ ] После ручного cancel/retry немедленно пересчитывать terminal state pipeline. Сейчас отменённая pending job больше не попадёт worker-у, поэтому `maybeAdvancePipeline()` не вызывается и active pipeline может навсегда блокировать новый запуск.
 - [x] Закрыть SSRF в Groq fallback download: валидировать protocol/host/IP `media_url`, запрещать loopback, private/link-local и metadata endpoints, учитывать DNS rebinding и редиректы.
@@ -472,7 +472,7 @@ Definition of Done:
 - [ ] Сериализовать выделение `criteria_versions.version_number` для manual и LLM drafts. `max(version_number)+1` без lock допускает race и unique violation; добавить concurrent integration test.
 - [ ] До первого изменения production-схемы утвердить отдельный DBA-процесс upgrade/rollback; bootstrap полной схемы намеренно не модифицирует непустую БД.
 - [ ] Вынести PostgreSQL suites в обязательную CI-команду. Обычный `npm test` сейчас зелёный при трёх пропущенных integration/security/queue suites; CI должна поднимать временную БД и падать при skip.
-- [ ] Добавить regression-тесты для lease fencing, running-job cancellation race, cancel→pipeline terminal state и stale-job max attempts. Тесты liveness, безопасных 5xx и SSRF/media size limits уже добавлены.
+- [ ] Добавить regression-тесты для running-job cancellation race и cancel→pipeline terminal state. Lease fencing, stale-job max attempts, liveness, безопасные 5xx и SSRF/media size limits уже покрыты.
 
 ### P2 — качество эксплуатации и интерфейса
 

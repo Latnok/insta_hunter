@@ -2,7 +2,7 @@ import os from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
 import { loadConfig } from './config/index.js';
 import { createPool } from './db/pool.js';
-import { reserveJob, completeJob, failJob, recoverStaleJobs } from './db/repositories/jobs.js';
+import { reserveJob, completeJob, failJob, heartbeatJob, recoverStaleJobs } from './db/repositories/jobs.js';
 import { createInstagramProviders } from './providers/instagram.js';
 import { createLlmClient } from './providers/llm.js';
 import { createJobHandlers, maybeAdvancePipeline } from './jobs/handlers.js';
@@ -31,17 +31,35 @@ async function loop(slot) {
     const job = await reserveJob(pool, `${workerId}:${slot}`);
     if (!job) { await delay(750); continue; }
     const log = logger.child({ jobId: job.id, jobType: job.job_type, accountId: job.account_id, slot });
+    let heartbeatBusy = false;
+    const jobHeartbeatTimer = setInterval(async () => {
+      if (heartbeatBusy) return;
+      heartbeatBusy = true;
+      try {
+        if (!await heartbeatJob(pool, job)) log.warn('job lease heartbeat rejected');
+      } catch (error) {
+        log.error({ err: error }, 'job lease heartbeat failed');
+      } finally {
+        heartbeatBusy = false;
+      }
+    }, 30_000);
+    jobHeartbeatTimer.unref();
+    let transitioned = false;
     try {
       const handler = handlers[job.job_type];
       if (!handler) throw new Error(`No handler for ${job.job_type}`);
       const result = await handler(job);
-      await completeJob(pool, job.id, result || {});
-      log.info('job succeeded');
+      transitioned = await completeJob(pool, job, result || {});
+      if (transitioned) log.info('job succeeded');
+      else log.warn('job result discarded because lease ownership changed');
     } catch (error) {
-      await failJob(pool, job, error);
-      log.error({ err: error }, 'job failed');
+      transitioned = await failJob(pool, job, error);
+      if (transitioned) log.error({ err: error }, 'job failed');
+      else log.warn({ err: error }, 'job failure discarded because lease ownership changed');
+    } finally {
+      clearInterval(jobHeartbeatTimer);
     }
-    await maybeAdvancePipeline(context, job.pipeline_run_id);
+    if (transitioned) await maybeAdvancePipeline(context, job.pipeline_run_id);
   }
 }
 

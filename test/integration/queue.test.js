@@ -7,6 +7,7 @@ import {
   completeJob,
   enqueueJob,
   failJob,
+  heartbeatJob,
   recoverStaleJobs,
   reserveJob
 } from '../../src/db/repositories/jobs.js';
@@ -97,7 +98,7 @@ integration('PostgreSQL job queue concurrency and recovery', () => {
     assert.equal(claimed.length, 1);
     assert.equal(claimed[0].attempts, 2);
 
-    await completeJob(pool, queued.id, { ok: true });
+    assert.equal(await completeJob(pool, claimed[0], { ok: true }), true);
     const attempts = await pool.query(`
       select attempt_number, outcome from job_attempts where job_id=$1 order by attempt_number
     `, [queued.id]);
@@ -110,7 +111,7 @@ integration('PostgreSQL job queue concurrency and recovery', () => {
   test('retry schedule ends in failed after max attempts', async () => {
     const queued = await enqueueJob(pool, job({ dedupeKey: 'retry:test', maxAttempts: 2 }));
     const first = await reserveJob(pool, 'worker-a');
-    await failJob(pool, first, new Error('first failure'));
+    assert.equal(await failJob(pool, first, new Error('first failure')), true);
 
     let stored = await pool.query('select status, error_summary from jobs where id=$1', [queued.id]);
     assert.equal(stored.rows[0].status, 'retry_wait');
@@ -118,11 +119,87 @@ integration('PostgreSQL job queue concurrency and recovery', () => {
 
     await pool.query('update jobs set available_at=now() where id=$1', [queued.id]);
     const second = await reserveJob(pool, 'worker-b');
-    await failJob(pool, second, new Error('final failure'));
+    assert.equal(await failJob(pool, second, new Error('final failure')), true);
 
     stored = await pool.query('select status, attempts, finished_at from jobs where id=$1', [queued.id]);
     assert.equal(stored.rows[0].status, 'failed');
     assert.equal(stored.rows[0].attempts, 2);
     assert.ok(stored.rows[0].finished_at);
+  });
+
+  test('heartbeat keeps a long-running current attempt from stale recovery', async () => {
+    await enqueueJob(pool, job({ dedupeKey: 'heartbeat:test' }));
+    const running = await reserveJob(pool, 'live-worker');
+    await pool.query(`
+      update jobs set locked_at=now() - interval '20 minutes', heartbeat_at=now() - interval '20 minutes'
+      where id=$1
+    `, [running.id]);
+
+    assert.equal(await heartbeatJob(pool, running), true);
+    assert.equal(await recoverStaleJobs(pool, 10), 0);
+    const stored = await pool.query(
+      'select status, locked_by, current_attempt_id from jobs where id=$1',
+      [running.id]
+    );
+    assert.deepEqual(stored.rows[0], {
+      status: 'running',
+      locked_by: 'live-worker',
+      current_attempt_id: running.current_attempt_id
+    });
+  });
+
+  test('stale worker cannot complete or fail a replacement attempt', async () => {
+    await enqueueJob(pool, job({ dedupeKey: 'fencing:test' }));
+    const stale = await reserveJob(pool, 'stale-worker');
+    await pool.query("update jobs set heartbeat_at=now() - interval '20 minutes' where id=$1", [stale.id]);
+    assert.equal(await recoverStaleJobs(pool, 10), 1);
+    const replacement = await reserveJob(pool, 'replacement-worker');
+
+    assert.equal(await completeJob(pool, stale, { stale: true }), false);
+    assert.equal(await failJob(pool, stale, new Error('late failure')), false);
+    const running = await pool.query(
+      'select status, locked_by, current_attempt_id from jobs where id=$1',
+      [stale.id]
+    );
+    assert.deepEqual(running.rows[0], {
+      status: 'running',
+      locked_by: 'replacement-worker',
+      current_attempt_id: replacement.current_attempt_id
+    });
+
+    assert.equal(await completeJob(pool, replacement, { fresh: true }), true);
+    const attempts = await pool.query(`
+      select attempt_number, outcome from job_attempts where job_id=$1 order by attempt_number
+    `, [stale.id]);
+    assert.deepEqual(attempts.rows, [
+      { attempt_number: 1, outcome: 'failed' },
+      { attempt_number: 2, outcome: 'succeeded' }
+    ]);
+  });
+
+  test('expired lease on the final allowed attempt fails permanently', async () => {
+    await enqueueJob(pool, job({ dedupeKey: 'stale-final:test', maxAttempts: 1 }));
+    const running = await reserveJob(pool, 'crashed-final-worker');
+    await pool.query("update jobs set heartbeat_at=now() - interval '20 minutes' where id=$1", [running.id]);
+
+    assert.equal(await recoverStaleJobs(pool, 10), 1);
+    const stored = await pool.query(`
+      select status, finished_at, locked_by, current_attempt_id, error_summary
+      from jobs where id=$1
+    `, [running.id]);
+    assert.equal(stored.rows[0].status, 'failed');
+    assert.ok(stored.rows[0].finished_at);
+    assert.equal(stored.rows[0].locked_by, null);
+    assert.equal(stored.rows[0].current_attempt_id, null);
+    assert.equal(stored.rows[0].error_summary, 'worker lease expired');
+    assert.equal(await reserveJob(pool, 'too-late-worker'), null);
+
+    const attempt = await pool.query(
+      'select outcome, error_detail, finished_at from job_attempts where id=$1',
+      [running.current_attempt_id]
+    );
+    assert.equal(attempt.rows[0].outcome, 'failed');
+    assert.equal(attempt.rows[0].error_detail, 'worker lease expired');
+    assert.ok(attempt.rows[0].finished_at);
   });
 });
