@@ -432,14 +432,14 @@ Definition of Done:
 - [x] Cover network, 404, 408, 429, 5xx, invalid JSON, empty result and non-retryable 400 branches without live API.
 - [x] Prove discovery creates candidate/source rows without enrichment jobs.
 - [x] Prove fresh profile/reels use cache while force refresh calls providers and upserts the existing reel.
-- [x] Pass 22/22 PostgreSQL integration tests and 40/40 default tests.
+- [x] Pass 25/25 PostgreSQL integration tests and 40/40 default tests.
 
 ## Debug-аудит — 2026-07-22
 
 Проверено локально:
 
 - `npm run check`: успешно, 50 JavaScript-файлов и 14 EJS-шаблонов.
-- `npm test`: 40 default-тестов успешно; отдельный PostgreSQL-прогон — 22/22.
+- `npm test`: 40 default-тестов успешно; отдельный PostgreSQL-прогон — 25/25.
 - `npm audit --omit=dev`: 0 известных уязвимостей.
 - Docker integration suite выполнен на одноразовой PostgreSQL 16; контейнеры, сеть, volume и тестовые образы удалены.
 - Состав первого Git-коммита проверен на секреты и временные артефакты.
@@ -450,8 +450,8 @@ Definition of Done:
 - [x] Реализовать настоящий heartbeat долгих jobs: worker обновляет lease текущего attempt каждые 30 секунд; integration-тест доказывает, что живой job не выдаётся второму worker.
 - [x] Добавить fencing по `locked_by` и `current_attempt_id` во все `heartbeatJob`/`completeJob`/`failJob`; результат старого worker после recovery отбрасывается.
 - [x] Исправить recovery на границе попыток: stale job с `attempts >= max_attempts` становится `failed`; crash на последней разрешённой попытке покрыт тестом.
-- [ ] Сделать cancel/reject/archive согласованными с pipeline: атомарно переводить активный `pipeline_run` в `cancelled`, не позволять уже running job создавать transcript/classify/evaluate jobs после смены lifecycle, и не разрешать manual retry для rejected/archived account или отменённого pipeline.
-- [ ] После ручного cancel/retry немедленно пересчитывать terminal state pipeline. Сейчас отменённая pending job больше не попадёт worker-у, поэтому `maybeAdvancePipeline()` не вызывается и active pipeline может навсегда блокировать новый запуск.
+- [x] Сделать cancel/reject/archive согласованными с pipeline: активный run и jobs отменяются атомарно, running attempt закрывается и fencing отбрасывает поздний результат; handler повторно проверяет lifecycle перед записью и созданием downstream jobs.
+- [x] Сделать manual cancel/retry согласованными с terminal state: cancel завершает весь связанный pipeline, а разрешённый retry атомарно возвращает failed pipeline в `running`.
 - [x] Закрыть SSRF в Groq fallback download: валидировать protocol/host/IP `media_url`, запрещать loopback, private/link-local и metadata endpoints, учитывать DNS rebinding и редиректы.
 - [x] Ограничивать media download потоково, прекращая чтение после 25 MB.
 - [ ] Добавить общий abort для in-flight provider/LLM операций при shutdown. Wall-clock timeout и принудительный `SIGKILL` для зависшего `ffmpeg` уже реализованы.
@@ -462,7 +462,7 @@ Definition of Done:
 
 - [ ] Не маскировать технический failure как `insufficient_data`: если исчерпаны попытки обязательного profile/reels/transcript job, pipeline должен завершаться `failed`/`partial` с `error_summary`; `insufficient_data` оставлять только для успешно полученных, но реально недостаточных данных.
 - [ ] Защитить worker slot от тихой остановки: ошибки `reserveJob`, `failJob` и `maybeAdvancePipeline` сейчас находятся вне общего supervisor. Добавить верхнеуровневый catch/backoff, метрику живых slots и тест на временный DB failure.
-- [ ] Ограничить manual retry значением DB constraint: выражение `max_attempts=attempts+3` после нескольких retry может превысить 10 и дать 500. Определить отдельную семантику retry budget и проверить повторный retry на границе.
+- [x] Ограничить manual retry значением DB constraint: бюджет увеличивается максимум до 10 попыток, а retry при `attempts >= 10` возвращает контролируемый конфликт.
 - [ ] Сделать CSV commit атомарным для всего preview или явно реализовать resumable import batch. Сейчас каждая строка и каждый pipeline создаются отдельными транзакциями, поэтому ошибка в середине оставляет частичный импорт.
 - [ ] Ужесточить CSV contract: явно проверять UTF-8 и обязательное наличие `username` или `url` header, отклонять лишние/неполные колонки вместо `relax_column_count: true`, нормализовать Multer limit/parser errors в 4xx и добавить abuse-тесты.
 - [ ] Выдавать CSV preview одноразовый ID/version вместо одного `req.session.csvPreview`: параллельные вкладки сейчас перезаписывают preview друг друга; commit должен быть идемпотентным и защищённым от повторной отправки.
@@ -472,7 +472,7 @@ Definition of Done:
 - [ ] Сериализовать выделение `criteria_versions.version_number` для manual и LLM drafts. `max(version_number)+1` без lock допускает race и unique violation; добавить concurrent integration test.
 - [ ] До первого изменения production-схемы утвердить отдельный DBA-процесс upgrade/rollback; bootstrap полной схемы намеренно не модифицирует непустую БД.
 - [ ] Вынести PostgreSQL suites в обязательную CI-команду. Обычный `npm test` сейчас зелёный при трёх пропущенных integration/security/queue suites; CI должна поднимать временную БД и падать при skip.
-- [ ] Добавить regression-тесты для running-job cancellation race и cancel→pipeline terminal state. Lease fencing, stale-job max attempts, liveness, безопасные 5xx и SSRF/media size limits уже покрыты.
+- [x] Добавить regression-тесты для running-job cancellation race и cancel→pipeline terminal state. Lease fencing, stale-job max attempts, liveness, безопасные 5xx и SSRF/media size limits также покрыты.
 
 ### P2 — качество эксплуатации и интерфейса
 

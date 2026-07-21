@@ -7,6 +7,7 @@ import { startPipeline } from '../services/pipelines.js';
 import { validateTranscriptRules } from '../domain/transcripts.js';
 import { withTransaction } from '../db/pool.js';
 import { enqueueJob } from '../db/repositories/jobs.js';
+import { cancelJob, retryJob } from '../services/jobs.js';
 
 function back(res, fallback = '/candidates') {
   res.set('HX-Redirect', fallback);
@@ -62,21 +63,12 @@ export function createActionRouter({ pool, config }) {
   router.post('/accounts/:id/restore', async (req, res) => { await restoreAccount(pool, req.params.id, requestMeta(req)); return back(res, '/bloggers?status=archived'); });
 
   router.post('/jobs/:id/retry', async (req, res) => {
-    const result = await pool.query(`
-      update jobs set status='retry_wait', available_at=now(), max_attempts=attempts+3,
-                      error_summary=null, finished_at=null, updated_at=now()
-      where id=$1 and status='failed' returning id
-    `, [req.params.id]);
-    if (!result.rowCount) throw Object.assign(new Error('Only failed jobs can be retried'), { statusCode: 409 });
+    await retryJob(pool, req.params.id);
     return back(res, '/queue');
   });
 
   router.post('/jobs/:id/cancel', async (req, res) => {
-    const result = await pool.query(`
-      update jobs set status='cancelled', finished_at=now(), updated_at=now()
-      where id=$1 and status in ('pending','retry_wait') returning id
-    `, [req.params.id]);
-    if (!result.rowCount) throw Object.assign(new Error('Only pending jobs can be cancelled'), { statusCode: 409 });
+    await cancelJob(pool, req.params.id);
     return back(res, '/queue');
   });
 

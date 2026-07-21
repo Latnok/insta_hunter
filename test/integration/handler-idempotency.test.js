@@ -4,6 +4,7 @@ import pg from 'pg';
 
 import { initializeSchema } from '../../src/db/schema.js';
 import { createJobHandlers } from '../../src/jobs/handlers.js';
+import { rejectAccount } from '../../src/services/accounts.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const integration = databaseUrl ? describe : describe.skip;
@@ -235,5 +236,53 @@ integration('job handler idempotency after worker restart', () => {
     const logs = await pool.query("select count(*)::int as count from llm_logs where job_id=$1 and status='succeeded'", [job.id]);
     assert.equal(drafts.rows[0].count, 1);
     assert.equal(logs.rows[0].count, 1);
+  });
+
+  test('lifecycle change during a provider call blocks state writes and downstream jobs', async () => {
+    const account = (await pool.query(`
+      insert into instagram_accounts(username,instagram_url,source_type)
+      values ('race_candidate','https://www.instagram.com/race_candidate/','manual') returning *
+    `)).rows[0];
+    const run = (await pool.query(`
+      insert into pipeline_runs(account_id,run_type,reels_limit)
+      values ($1,'candidate_enrichment',3) returning *
+    `, [account.id])).rows[0];
+    const job = await insertJob('fetch_reels', account.id, {
+      pipelineRunId: run.id,
+      dedupeKey: 'race:fetch-reels',
+      payload: { forceRefresh: true, reelsLimit: 3 }
+    });
+    let releaseProvider;
+    let markStarted;
+    const started = new Promise((resolve) => { markStarted = resolve; });
+    const instagram = {
+      reels: async () => new Promise((resolve) => {
+        releaseProvider = resolve;
+        markStarted();
+      })
+    };
+    const handlerPromise = createJobHandlers({ pool, instagram, config }).fetch_reels(job);
+    await started;
+    await rejectAccount(pool, account.id, 'changed during provider call', {});
+    releaseProvider({
+      provider: 'fixture', requestMeta: { status: 200 },
+      items: [{
+        instagramMediaId: 'race-media', shortcode: 'race-shortcode',
+        reelUrl: 'https://www.instagram.com/reel/race-shortcode/', caption: 'late result',
+        publishedAt: null, playCount: 1, likeCount: 1, commentCount: 0,
+        thumbnailUrl: null, mediaUrl: null, provider: 'fixture', rawPayload: {}
+      }]
+    });
+
+    await assert.rejects(handlerPromise, /Pipeline is no longer active/);
+    const reels = await pool.query("select count(*)::int as count from reels where instagram_media_id='race-media'");
+    const downstream = await pool.query(`
+      select count(*)::int as count from jobs
+      where pipeline_run_id=$1 and job_type in ('fetch_transcript','classify_transcript','evaluate_candidate')
+    `, [run.id]);
+    const storedRun = await pool.query('select status from pipeline_runs where id=$1', [run.id]);
+    assert.equal(reels.rows[0].count, 0);
+    assert.equal(downstream.rows[0].count, 0);
+    assert.equal(storedRun.rows[0].status, 'cancelled');
   });
 });

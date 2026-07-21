@@ -4,6 +4,7 @@ import { enqueueJob } from '../db/repositories/jobs.js';
 import { isStale } from '../domain/accounts.js';
 import { classifyTranscript, validateTranscriptRules } from '../domain/transcripts.js';
 import { transcribeWithGroq } from '../providers/groq.js';
+import { cancelPipelineWork } from '../services/jobs.js';
 
 async function logProvider(pool, { provider, operation, job, meta, outcome, error }) {
   await pool.query(`
@@ -12,6 +13,22 @@ async function logProvider(pool, { provider, operation, job, meta, outcome, erro
   `, [provider, operation, job.account_id, job.reel_id, job.id, meta?.status || error?.statusCode || null,
     meta?.requestId || error?.requestMeta?.requestId || null, meta?.durationMs || error?.durationMs || null,
     outcome, error ? { message: error.message, providers: error.fallbackErrors, response: error.responseData } : null]);
+}
+
+async function assertActivePipeline(client, job) {
+  if (!job.pipeline_run_id) return;
+  const account = (await client.query(
+    'select lifecycle_status from instagram_accounts where id=$1 for update',
+    [job.account_id]
+  )).rows[0];
+  const run = (await client.query(
+    'select status,run_type from pipeline_runs where id=$1 and account_id=$2 for update',
+    [job.pipeline_run_id, job.account_id]
+  )).rows[0];
+  const expectedLifecycle = run?.run_type === 'candidate_enrichment' ? 'candidate' : 'approved';
+  if (!account || !run || !['pending', 'running'].includes(run.status) || account.lifecycle_status !== expectedLifecycle) {
+    throw new Error('Pipeline is no longer active for this account lifecycle');
+  }
 }
 
 async function handleDiscovery(context, job) {
@@ -56,18 +73,21 @@ async function handleProfile(context, job) {
     const result = await instagram.profile(account.username);
     await logProvider(pool, { provider: result.provider, operation: 'profile', job, meta: result.requestMeta, outcome: 'succeeded' });
     const p = result.profile;
-    await pool.query(`
-      insert into account_profiles(
-        account_id,instagram_id,username,display_name,bio,avatar_url,external_url,followers,following,posts_count,
-        verified,is_private,engagement_rate,language,content_category,profile_status,provider,raw_payload,fetched_at
-      ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'available',$16,$17,now())
-      on conflict(account_id) do update set instagram_id=excluded.instagram_id,username=excluded.username,
-        display_name=excluded.display_name,bio=excluded.bio,avatar_url=excluded.avatar_url,external_url=excluded.external_url,
-        followers=excluded.followers,following=excluded.following,posts_count=excluded.posts_count,verified=excluded.verified,
-        is_private=excluded.is_private,engagement_rate=excluded.engagement_rate,language=excluded.language,
-        content_category=excluded.content_category,profile_status='available',provider=excluded.provider,
-        unavailable_reason=null,raw_payload=excluded.raw_payload,fetched_at=now(),updated_at=now()
-    `, [job.account_id,p.instagramId,p.username,p.displayName,p.bio,p.avatarUrl,p.externalUrl,p.followers,p.following,p.postsCount,p.verified,p.isPrivate,p.engagementRate,p.language,p.contentCategory,result.provider,result.rawPayload]);
+    await withTransaction(pool, async (client) => {
+      await assertActivePipeline(client, job);
+      await client.query(`
+        insert into account_profiles(
+          account_id,instagram_id,username,display_name,bio,avatar_url,external_url,followers,following,posts_count,
+          verified,is_private,engagement_rate,language,content_category,profile_status,provider,raw_payload,fetched_at
+        ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'available',$16,$17,now())
+        on conflict(account_id) do update set instagram_id=excluded.instagram_id,username=excluded.username,
+          display_name=excluded.display_name,bio=excluded.bio,avatar_url=excluded.avatar_url,external_url=excluded.external_url,
+          followers=excluded.followers,following=excluded.following,posts_count=excluded.posts_count,verified=excluded.verified,
+          is_private=excluded.is_private,engagement_rate=excluded.engagement_rate,language=excluded.language,
+          content_category=excluded.content_category,profile_status='available',provider=excluded.provider,
+          unavailable_reason=null,raw_payload=excluded.raw_payload,fetched_at=now(),updated_at=now()
+      `, [job.account_id,p.instagramId,p.username,p.displayName,p.bio,p.avatarUrl,p.externalUrl,p.followers,p.following,p.postsCount,p.verified,p.isPrivate,p.engagementRate,p.language,p.contentCategory,result.provider,result.rawPayload]);
+    });
     return { provider: result.provider };
   } catch (error) {
     await logProvider(pool, { provider: 'instagram-fallback', operation: 'profile', job, outcome: 'failed', error });
@@ -108,6 +128,7 @@ async function handleReels(context, job) {
     const result = await instagram.reels(account.username, job.payload.reelsLimit);
     await logProvider(pool, { provider: result.provider, operation: 'reels', job, meta: result.requestMeta, outcome: 'succeeded' });
     const saved = await withTransaction(pool, async (client) => {
+      await assertActivePipeline(client, job);
       const rows = [];
       for (const item of result.items.slice(0, job.payload.reelsLimit)) {
         const reel = await upsertReel(client, job.account_id, item);
@@ -147,6 +168,7 @@ async function handleTranscript(context, job) {
     await logProvider(pool, { provider: result.provider, operation: 'transcript', job, meta: result.requestMeta, outcome: 'succeeded' });
   }
   await withTransaction(pool, async (client) => {
+    await assertActivePipeline(client, job);
     await client.query(`
       update reels set transcript_status=$2,transcript_text=$3,transcript_source=$4,transcript_checked_at=now(),
         transcript_http_status=$5,transcript_error=null,updated_at=now() where id=$1
@@ -169,7 +191,10 @@ async function handleClassify(context, job) {
   `, [job.reel_id]);
   if (!result.rowCount) throw new Error('Reel or active criteria not found');
   const classification = classifyTranscript(result.rows[0].transcript_text, result.rows[0].transcript_rules);
-  await pool.query(`update reels set transcript_quality=$2,transcript_quality_reason=$3,updated_at=now() where id=$1`, [job.reel_id, classification.quality, classification.reason]);
+  await withTransaction(pool, async (client) => {
+    await assertActivePipeline(client, job);
+    await client.query(`update reels set transcript_quality=$2,transcript_quality_reason=$3,updated_at=now() where id=$1`, [job.reel_id, classification.quality, classification.reason]);
+  });
   return classification;
 }
 
@@ -203,6 +228,7 @@ async function handleEvaluation(context, job) {
   try {
     const result = await llm.evaluate(messages);
     await withTransaction(pool, async (client) => {
+      await assertActivePipeline(client, job);
       const log = await client.query(`
         insert into llm_logs(purpose,job_id,account_id,criteria_version_id,base_url,model,request_messages,raw_response,parsed_response,
           prompt_tokens,completion_tokens,latency_ms,status)
@@ -276,8 +302,16 @@ export async function maybeAdvancePipeline(context, pipelineRunId) {
   if (!pipelineRunId) return;
   const { pool, config } = context;
   await withTransaction(pool, async (client) => {
+    const preview = (await client.query('select account_id from pipeline_runs where id=$1', [pipelineRunId])).rows[0];
+    if (!preview) return;
+    const account = (await client.query('select lifecycle_status from instagram_accounts where id=$1 for update', [preview.account_id])).rows[0];
     const run = (await client.query('select * from pipeline_runs where id=$1 for update', [pipelineRunId])).rows[0];
     if (!run || !['pending','running'].includes(run.status)) return;
+    const expectedLifecycle = run.run_type === 'candidate_enrichment' ? 'candidate' : 'approved';
+    if (!account || account.lifecycle_status !== expectedLifecycle) {
+      await cancelPipelineWork(client, run.id, 'account lifecycle changed');
+      return;
+    }
     await client.query(`update pipeline_runs set status='running',started_at=coalesce(started_at,now()) where id=$1`, [run.id]);
     const jobs = (await client.query('select job_type,status from jobs where pipeline_run_id=$1', [run.id])).rows;
     if (jobs.some((item) => ['pending','running','retry_wait'].includes(item.status))) return;

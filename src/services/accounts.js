@@ -2,6 +2,7 @@ import { withTransaction } from '../db/pool.js';
 import { upsertAccount } from '../db/repositories/accounts.js';
 import { assertTransition } from '../domain/accounts.js';
 import { startPipeline } from './pipelines.js';
+import { cancelAccountWork } from './jobs.js';
 
 export async function addManualAccount(pool, config, input, sourceNote = null) {
   const account = await withTransaction(pool, (client) => upsertAccount(client, {
@@ -37,10 +38,7 @@ async function transition(pool, { accountId, to, reason, requestMeta = {} }) {
       parameters
     );
     if (to === 'rejected' || to === 'archived') {
-      await client.query(`
-        update jobs set status='cancelled', finished_at=now(), updated_at=now()
-        where account_id=$1 and status in ('pending','retry_wait')
-      `, [accountId]);
+      await cancelAccountWork(client, accountId, `account ${to}`);
     }
     await client.query(`
       insert into audit_events(action, entity_type, entity_id, old_values, new_values, reason, request_ip, user_agent)

@@ -11,6 +11,7 @@ import {
   recoverStaleJobs,
   reserveJob
 } from '../../src/db/repositories/jobs.js';
+import { cancelJob, retryJob } from '../../src/services/jobs.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const integration = databaseUrl ? describe : describe.skip;
@@ -23,7 +24,7 @@ integration('PostgreSQL job queue concurrency and recovery', () => {
   });
 
   beforeEach(async () => {
-    await pool.query('truncate table jobs restart identity cascade');
+    await pool.query('truncate table instagram_accounts, jobs restart identity cascade');
   });
 
   after(async () => {
@@ -37,6 +38,18 @@ integration('PostgreSQL job queue concurrency and recovery', () => {
       maxAttempts: 3,
       ...overrides
     };
+  }
+
+  async function accountPipeline(username, lifecycle = 'candidate', runType = 'candidate_enrichment') {
+    const account = (await pool.query(`
+      insert into instagram_accounts(username,instagram_url,source_type,lifecycle_status)
+      values ($1,$2,'manual',$3) returning *
+    `, [username, `https://www.instagram.com/${username}/`, lifecycle])).rows[0];
+    const pipeline = (await pool.query(`
+      insert into pipeline_runs(account_id,run_type,reels_limit)
+      values ($1,$2,3) returning *
+    `, [account.id, runType])).rows[0];
+    return { account, pipeline };
   }
 
   test('concurrent enqueue calls preserve a single deduplicated job', async () => {
@@ -201,5 +214,64 @@ integration('PostgreSQL job queue concurrency and recovery', () => {
     assert.equal(attempt.rows[0].outcome, 'failed');
     assert.equal(attempt.rows[0].error_detail, 'worker lease expired');
     assert.ok(attempt.rows[0].finished_at);
+  });
+
+  test('manual cancellation fences a running attempt and terminates its pipeline', async () => {
+    const { account, pipeline } = await accountPipeline('cancel_running');
+    await enqueueJob(pool, job({
+      accountId: account.id, pipelineRunId: pipeline.id,
+      dedupeKey: 'cancel:running', jobType: 'fetch_profile'
+    }));
+    await enqueueJob(pool, job({
+      accountId: account.id, pipelineRunId: pipeline.id,
+      dedupeKey: 'cancel:pending', jobType: 'fetch_reels'
+    }));
+    const running = await reserveJob(pool, 'cancel-worker');
+
+    await cancelJob(pool, running.id);
+    const storedPipeline = await pool.query('select status,finished_at from pipeline_runs where id=$1', [pipeline.id]);
+    assert.equal(storedPipeline.rows[0].status, 'cancelled');
+    assert.ok(storedPipeline.rows[0].finished_at);
+    const jobs = await pool.query('select status,current_attempt_id from jobs where pipeline_run_id=$1 order by id', [pipeline.id]);
+    assert.deepEqual(jobs.rows.map((row) => row.status), ['cancelled', 'cancelled']);
+    assert.ok(jobs.rows.every((row) => row.current_attempt_id === null));
+    const attempt = await pool.query('select outcome,error_detail from job_attempts where id=$1', [running.current_attempt_id]);
+    assert.deepEqual(attempt.rows[0], { outcome: 'failed', error_detail: 'cancelled manually' });
+    assert.equal(await completeJob(pool, running, { tooLate: true }), false);
+  });
+
+  test('manual retry reopens a valid pipeline and rejects unsafe retry contexts', async () => {
+    const valid = await accountPipeline('retry_valid');
+    await enqueueJob(pool, job({
+      accountId: valid.account.id, pipelineRunId: valid.pipeline.id,
+      dedupeKey: 'manual-retry:valid', jobType: 'fetch_profile', maxAttempts: 1
+    }));
+    const failed = await reserveJob(pool, 'retry-worker');
+    assert.equal(await failJob(pool, failed, new Error('failed once')), true);
+    await pool.query("update pipeline_runs set status='failed',finished_at=now() where id=$1", [valid.pipeline.id]);
+    const retried = await retryJob(pool, failed.id);
+    assert.equal(retried.status, 'retry_wait');
+    assert.equal(retried.max_attempts, 4);
+    const reopened = await pool.query('select status,finished_at from pipeline_runs where id=$1', [valid.pipeline.id]);
+    assert.deepEqual(reopened.rows[0], { status: 'running', finished_at: null });
+
+    await pool.query("update jobs set status='failed',attempts=10,max_attempts=10 where id=$1", [failed.id]);
+    await assert.rejects(retryJob(pool, failed.id), /retry budget is exhausted/);
+
+    const rejected = await accountPipeline('retry_rejected');
+    const rejectedJob = (await pool.query(`
+      insert into jobs(account_id,pipeline_run_id,job_type,dedupe_key,status,attempts)
+      values ($1,$2,'fetch_profile','manual-retry:rejected','failed',1) returning *
+    `, [rejected.account.id, rejected.pipeline.id])).rows[0];
+    await pool.query("update instagram_accounts set lifecycle_status='rejected',rejected_at=now() where id=$1", [rejected.account.id]);
+    await assert.rejects(retryJob(pool, rejectedJob.id), /rejected or archived/);
+
+    const cancelled = await accountPipeline('retry_cancelled');
+    const cancelledJob = (await pool.query(`
+      insert into jobs(account_id,pipeline_run_id,job_type,dedupe_key,status,attempts)
+      values ($1,$2,'fetch_profile','manual-retry:cancelled','failed',1) returning *
+    `, [cancelled.account.id, cancelled.pipeline.id])).rows[0];
+    await pool.query("update pipeline_runs set status='cancelled',finished_at=now() where id=$1", [cancelled.pipeline.id]);
+    await assert.rejects(retryJob(pool, cancelledJob.id), /Cancelled pipelines/);
   });
 });

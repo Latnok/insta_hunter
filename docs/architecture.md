@@ -177,6 +177,8 @@ Discovery выполняется как background job, поэтому HTTP-за
 - lease: `locked_by`, `locked_at`, `heartbeat_at`, `current_attempt_id`; heartbeat и terminal update принимаются только от текущего worker/attempt
 - error summary и timestamps
 
+Reject/archive и ручная отмена выполняются транзакционно: связанный активный pipeline и все его pending/running/retry jobs переходят в `cancelled`, текущий attempt закрывается, а поздний ответ worker отбрасывается fencing-проверкой. Перед записью provider/LLM результата handler повторно блокирует account и pipeline и проверяет соответствие lifecycle.
+
 Типы: `discover_accounts`, `fetch_profile`, `fetch_reels`, `fetch_transcript`, `classify_transcript`, `evaluate_candidate`, `propose_criteria`.
 
 Worker резервирует jobs через `FOR UPDATE SKIP LOCKED`. Просроченный lease возвращает job в `retry_wait` при старте/периодическом recovery.

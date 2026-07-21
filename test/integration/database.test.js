@@ -4,6 +4,7 @@ import pg from 'pg';
 
 import { initializeSchema } from '../../src/db/schema.js';
 import { upsertAccount } from '../../src/db/repositories/accounts.js';
+import { completeJob, enqueueJob, reserveJob } from '../../src/db/repositories/jobs.js';
 import {
   approveAccount,
   archiveAccount,
@@ -144,12 +145,19 @@ integration('PostgreSQL repositories, constraints and lifecycle transitions', ()
 
   test('reject cancels pending work and writes an audit event atomically', async () => {
     const account = await insertAccount('reject_me');
-    await pool.query(`
-      insert into jobs(account_id, job_type, dedupe_key, status)
-      values
-        ($1, 'fetch_profile', 'reject:pending', 'pending'),
-        ($1, 'fetch_reels', 'reject:retry', 'retry_wait')
-    `, [account.id]);
+    const pipeline = (await pool.query(`
+      insert into pipeline_runs(account_id,run_type,reels_limit)
+      values ($1,'candidate_enrichment',3) returning *
+    `, [account.id])).rows[0];
+    await enqueueJob(pool, {
+      accountId: account.id, pipelineRunId: pipeline.id, jobType: 'fetch_profile',
+      dedupeKey: 'reject:running', maxAttempts: 3
+    });
+    await enqueueJob(pool, {
+      accountId: account.id, pipelineRunId: pipeline.id, jobType: 'fetch_reels',
+      dedupeKey: 'reject:pending', maxAttempts: 3
+    });
+    const running = await reserveJob(pool, 'reject-worker');
 
     const rejected = await rejectAccount(pool, account.id, 'not relevant', {
       ip: '127.0.0.1', userAgent: 'integration-test'
@@ -160,6 +168,12 @@ integration('PostgreSQL repositories, constraints and lifecycle transitions', ()
     const jobs = await pool.query('select status, finished_at from jobs order by id');
     assert.deepEqual(jobs.rows.map((row) => row.status), ['cancelled', 'cancelled']);
     assert.ok(jobs.rows.every((row) => row.finished_at));
+    const storedPipeline = await pool.query('select status,finished_at from pipeline_runs where id=$1', [pipeline.id]);
+    assert.equal(storedPipeline.rows[0].status, 'cancelled');
+    assert.ok(storedPipeline.rows[0].finished_at);
+    const attempt = await pool.query('select outcome,error_detail from job_attempts where id=$1', [running.current_attempt_id]);
+    assert.deepEqual(attempt.rows[0], { outcome: 'failed', error_detail: 'account rejected' });
+    assert.equal(await completeJob(pool, running, { tooLate: true }), false);
 
     const audit = await pool.query('select action, reason from audit_events');
     assert.deepEqual(audit.rows, [{ action: 'rejected', reason: 'not relevant' }]);
