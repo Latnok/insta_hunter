@@ -1,0 +1,13 @@
+<div id="ai-query-suggestion" class="ai-query-suggestion"<% if (['pending', 'running', 'retry_wait'].includes(job.status)) { %> hx-get="/ui/discovery-query-suggestions/<%= job.id %>" hx-trigger="every 2s" hx-swap="outerHTML"<% } %>>
+  <% if (['pending', 'running', 'retry_wait'].includes(job.status)) { %>
+    <span class="chip">ИИ готовит запрос…</span><small class="muted">Можно продолжать работать на странице.</small>
+  <% } else if (job.status === 'succeeded' && queries.length) { %>
+    <div data-discovery-query-default="<%= queries[0] %>"><strong>Запрос подготовлен</strong><small class="muted block">Первый вариант уже подставлен. Можно выбрать другой:</small></div>
+    <div class="query-suggestions"><% queries.forEach((query) => { %><button type="button" class="query-suggestion" data-discovery-query="<%= query %>"><%= query %></button><% }) %></div>
+  <% } else if (job.status === 'succeeded') { %>
+    <p class="error-text">ИИ не предложил поисковых запросов. Проверьте данные и активные критерии.</p>
+  <% } else { %>
+    <p class="error-text">Не удалось подготовить запрос: <%= job.error_summary || 'неизвестная ошибка' %></p>
+    <form hx-post="/discovery-query-suggestions" hx-target="#ai-query-suggestion" hx-swap="outerHTML"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="button secondary">Попробовать снова</button></form>
+  <% } %>
+</div>

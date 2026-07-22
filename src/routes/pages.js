@@ -14,8 +14,7 @@ export function createPageRouter({ pool, config }) {
     const statuses = query.status === 'rejected' ? ['rejected'] : ['candidate'];
     const accounts = await listAccounts(pool, { statuses, search: query.search, limit: pageSize, offset: query.offset });
     accounts.forEach((account) => { account.is_stale = !account.profile_fetched_at || Date.now() - new Date(account.profile_fetched_at).getTime() >= config.freshnessMs; });
-    const discovery = await pool.query('select * from discovery_runs order by created_at desc limit 5');
-    res.render('accounts', { title: req.t('candidates'), active: 'candidates', accounts, discoveryRuns: discovery.rows, mode: 'candidates', query, config });
+    res.render('accounts', { title: req.t('candidates'), active: 'candidates', accounts, mode: 'candidates', query, config });
   });
 
   router.get('/bloggers', async (req, res) => {
@@ -23,7 +22,7 @@ export function createPageRouter({ pool, config }) {
     const statuses = query.status === 'archived' ? ['archived'] : ['approved'];
     const accounts = await listAccounts(pool, { statuses, search: query.search, limit: pageSize, offset: query.offset });
     accounts.forEach((account) => { account.is_stale = !account.profile_fetched_at || Date.now() - new Date(account.profile_fetched_at).getTime() >= config.freshnessMs; });
-    res.render('accounts', { title: req.t('bloggers'), active: 'bloggers', accounts, discoveryRuns: [], mode: 'bloggers', query, config });
+    res.render('accounts', { title: req.t('bloggers'), active: 'bloggers', accounts, mode: 'bloggers', query, config });
   });
 
   router.get('/reels', async (req, res) => {
@@ -44,9 +43,20 @@ export function createPageRouter({ pool, config }) {
     res.render('settings', { title: req.t('settings'), active: 'settings', criteria: result.rows, llmLogs: logs.rows });
   });
 
-  router.get('/ui/discovery-runs', async (req, res) => {
-    const result = await pool.query('select * from discovery_runs order by created_at desc limit 10');
-    return res.render('partials/discovery-runs', { discoveryRuns: result.rows });
+  router.get('/ui/discovery-query-suggestions/:jobId', async (req, res) => {
+    if (!/^\d+$/.test(req.params.jobId)) return res.status(400).send('Invalid job ID');
+    const result = await pool.query(`
+      select j.id,j.status,j.error_summary,c.search_queries
+      from jobs j
+      left join criteria_versions c on c.source_job_id=j.id
+      where j.id=$1 and j.job_type='propose_criteria'
+    `, [req.params.jobId]);
+    if (!result.rowCount) return res.status(404).send('Suggestion job not found');
+    const job = result.rows[0];
+    const queries = Array.isArray(job.search_queries)
+      ? job.search_queries.map((value) => String(value).trim()).filter(Boolean)
+      : [];
+    return res.render('partials/discovery-query-suggestion', { job, queries });
   });
 
   router.get('/ui/accounts/:id', async (req, res) => {

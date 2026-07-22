@@ -1,7 +1,0 @@
-<section class="table-card discovery-runs" <% if (discoveryRuns.some((run) => ['pending','running'].includes(run.status))) { %>hx-get="/ui/discovery-runs" hx-trigger="every 3s" hx-swap="outerHTML"<% } %>>
-  <h2>Discovery runs</h2>
-  <% if (!discoveryRuns.length) { %><p class="muted"><%= t('noData') %></p><% } else { %>
-  <table><thead><tr><th>Query</th><th>Status</th><th>Found</th><th>Created</th><th>Existing</th><th>Invalid/error</th></tr></thead><tbody>
-    <% discoveryRuns.forEach((run) => { %><tr><td><%= run.query %></td><td><span class="chip"><%= run.status %></span></td><td><%= run.found_count %></td><td><%= run.created_count %></td><td><%= run.existing_count %></td><td><%= run.error_summary || run.invalid_count %></td></tr><% }) %>
-  </tbody></table><% } %>
-</section>

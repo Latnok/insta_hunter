@@ -20,6 +20,18 @@ function requestMeta(req) {
   return { ip: req.ip, userAgent: req.get('user-agent') };
 }
 
+async function enqueueCriteriaProposal(pool, config) {
+  return withTransaction(pool, async (client) => {
+    const active = await client.query(`select id from criteria_versions where status='active' limit 1`);
+    if (!active.rowCount) throw Object.assign(new Error('Active criteria not found'), { statusCode: 409 });
+    return enqueueJob(client, {
+      jobType: 'propose_criteria', payload: { criteriaVersionId: active.rows[0].id },
+      dedupeKey: `criteria-proposal:${active.rows[0].id}:${Date.now()}:${crypto.randomUUID()}`,
+      maxAttempts: config.JOB_MAX_ATTEMPTS
+    });
+  });
+}
+
 const csvPreviewVersion = 1;
 const csvPreviewTtlMs = 15 * 60 * 1000;
 const csvPreviewLimit = 5;
@@ -65,6 +77,14 @@ export function createActionRouter({ pool, config }) {
 
   router.post('/discovery-runs', async (req, res) => {
     await createDiscoveryRun(pool, config, { query: req.body.query, limit: req.body.limit });
+    return back(res);
+  });
+
+  router.post('/discovery-query-suggestions', async (req, res) => {
+    const job = await enqueueCriteriaProposal(pool, config);
+    if (req.get('HX-Request')) {
+      return res.render('partials/discovery-query-suggestion', { job, queries: [] });
+    }
     return back(res);
   });
 
@@ -137,14 +157,7 @@ export function createActionRouter({ pool, config }) {
   });
 
   router.post('/criteria/proposals', async (_req, res) => {
-    await withTransaction(pool, async (client) => {
-      const active = await client.query(`select id from criteria_versions where status='active' limit 1`);
-      if (!active.rowCount) throw Object.assign(new Error('Active criteria not found'), { statusCode: 409 });
-      await enqueueJob(client, {
-        jobType: 'propose_criteria', payload: { criteriaVersionId: active.rows[0].id },
-        dedupeKey: `criteria-proposal:${active.rows[0].id}:${Date.now()}`, maxAttempts: config.JOB_MAX_ATTEMPTS
-      });
-    });
+    await enqueueCriteriaProposal(pool, config);
     return back(res, '/settings');
   });
 

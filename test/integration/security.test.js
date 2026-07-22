@@ -144,6 +144,39 @@ integration('authentication and request security', () => {
     await agent.get('/queue?status=failed&jobType=fetch_profile').expect(200);
   });
 
+  test('AI discovery query request requires CSRF and enqueues a criteria proposal job', async () => {
+    const insertedCriteria = await pool.query(`
+      insert into criteria_versions(version_number,checklist_markdown,search_queries,transcript_rules,status,source)
+      select coalesce(max(version_number),0)+1,'integration criteria','["fashion"]','{}','active','manual'
+      from criteria_versions
+      where not exists(select 1 from criteria_versions where status='active')
+      returning id
+    `);
+    const app = createApp({ config: config(), pool, logger });
+    const agent = request.agent(app);
+    const loginPage = await agent.get('/login').expect(200);
+    await agent.post('/auth/login').type('form').send({
+      _csrf: csrfFrom(loginPage), username: 'admin', password
+    }).expect(302);
+    const candidates = await agent.get('/candidates').expect(200);
+    const csrf = csrfFrom(candidates);
+
+    await agent.post('/discovery-query-suggestions')
+      .set('HX-Request', 'true')
+      .expect(403);
+    const response = await agent.post('/discovery-query-suggestions')
+      .set('HX-Request', 'true')
+      .set('X-CSRF-Token', csrf)
+      .expect(200);
+    const jobId = response.text.match(/\/ui\/discovery-query-suggestions\/(\d+)/)?.[1];
+    assert.ok(jobId);
+    const job = await pool.query('select job_type,status from jobs where id=$1', [jobId]);
+    assert.deepEqual(job.rows[0], { job_type: 'propose_criteria', status: 'pending' });
+
+    await pool.query('delete from jobs where id=$1', [jobId]);
+    if (insertedCriteria.rowCount) await pool.query('delete from criteria_versions where id=$1', [insertedCriteria.rows[0].id]);
+  });
+
   test('login is throttled by IP address', async () => {
     const app = createApp({ config: config(), pool, logger });
     const initial = await request(app).get('/login').expect(200);

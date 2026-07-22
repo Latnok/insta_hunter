@@ -2,13 +2,30 @@
 <main class="page">
   <div class="page-heading"><div><h1><%= title %></h1><p class="muted"><%= mode === 'candidates' ? 'Discovery and review pipeline' : 'Approved blogger registry' %></p></div></div>
   <% if (mode === 'candidates') { %>
-  <section class="toolbar-panel">
-    <form method="post" action="/accounts" class="toolbar-form"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><input name="account" placeholder="@username or Instagram URL" required><button class="button primary"><%= t('add') %></button></form>
-    <form method="post" action="/discovery-runs" class="toolbar-form"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><input name="query" placeholder="fashion moscow" required><input class="small-input" type="number" name="limit" min="1" max="<%= config.DISCOVERY_MAX_LIMIT %>" value="<%= config.DISCOVERY_DEFAULT_LIMIT %>"><button class="button secondary"><%= t('search') %></button></form>
-    <form hx-post="/imports/csv/preview" hx-target="#csv-preview" hx-encoding="multipart/form-data" class="toolbar-form"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="file" name="file" accept=".csv,text/csv" required><button class="button secondary">CSV preview</button></form>
+  <section class="toolbar-panel candidate-tools">
+    <div class="discovery-search stack">
+      <div><h2>Поиск новых блогеров</h2><p class="muted">Опишите, каких авторов нужно найти, или попросите ИИ подготовить запрос по одобренным и отклонённым примерам.</p></div>
+      <form method="post" action="/discovery-runs" class="toolbar-form discovery-search-form">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <label class="field-grow"><span>Что искать в Instagram</span><input id="discovery-query" name="query" placeholder="Например: блогеры с обзорами женской одежды" maxlength="200" required></label>
+        <label><span>Сколько кандидатов</span><input class="small-input" type="number" name="limit" min="1" max="<%= config.DISCOVERY_MAX_LIMIT %>" value="<%= config.DISCOVERY_DEFAULT_LIMIT %>"></label>
+        <button class="button primary search-submit">Найти кандидатов</button>
+      </form>
+      <div id="ai-query-suggestion" class="ai-query-suggestion">
+        <form hx-post="/discovery-query-suggestions" hx-target="#ai-query-suggestion" hx-swap="outerHTML">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <button class="button secondary">Предложить запрос через ИИ</button>
+        </form>
+        <small class="muted">ИИ проанализирует доступные профили и полезные расшифровки, создаст черновик критериев и подставит поисковую фразу.</small>
+      </div>
+    </div>
+    <div class="candidate-imports stack">
+      <h2>Добавить напрямую</h2>
+      <form method="post" action="/accounts" class="toolbar-form"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><input name="account" placeholder="@username или ссылка Instagram" required><button class="button secondary"><%= t('add') %></button></form>
+      <form hx-post="/imports/csv/preview" hx-target="#csv-preview" hx-encoding="multipart/form-data" class="toolbar-form"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="file" name="file" accept=".csv,text/csv" required><button class="button secondary">Проверить CSV</button></form>
+    </div>
     <div id="csv-preview"></div>
   </section>
-  <div hx-get="/ui/discovery-runs" hx-trigger="load" hx-swap="innerHTML"></div>
   <% } %>
   <form class="filters" method="get"><input name="search" value="<%= query.search || '' %>" placeholder="@username"><select name="status"><% if (mode === 'candidates') { %><option value="candidate">candidate</option><option value="rejected" <%= query.status === 'rejected' ? 'selected' : '' %>>rejected</option><% } else { %><option value="approved">approved</option><option value="archived" <%= query.status === 'archived' ? 'selected' : '' %>>archived</option><% } %></select><button class="button secondary"><%= t('search') %></button></form>
   <% if (!accounts.length) { %><div class="empty"><%= t('noData') %></div><% } %>
