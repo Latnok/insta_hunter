@@ -11,9 +11,10 @@
 - [x] Записывать действия администратора в audit log.
 - [x] Поднять контракт полной БД до schema version 2 без цепочки миграций.
 - [x] Прогнать syntax/default/PostgreSQL integration suites на чистой schema v2: syntax OK, 60/60 default, 36/36 integration.
-- [ ] Провести blue/green rehearsal переноса production-данных v1 → v2.
-- [ ] Развернуть release со schema v2 и проверить генерацию на новом одобренном блогере.
-- [ ] После проверки закоммитить и отправить release в GitHub.
+- [x] Провести blue/green rehearsal переноса production-данных v1 → v2 с точной сверкой 17 таблиц и compatibility checks обоих образов.
+- [x] Развернуть release `0.2.0` со schema v2; проверить public readiness, web, worker heartbeat и сохранность данных.
+- [x] Закоммитить release как `eb6a094` и отправить в GitHub `origin/master`.
+- [ ] Проверить первый реальный LLM-черновик после следующего естественного Approve; не менять решение по существующему кандидату ради smoke-теста.
 
 Статусы чекбоксов фиксируют фактическое выполнение. Порядок фаз является порядком реализации; переход к следующей фазе допускается после выполнения acceptance gate текущей.
 

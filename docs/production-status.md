@@ -7,8 +7,8 @@ Last verified: 2026-07-22.
 - Public URL: `https://insta.podedu.ru`
 - Server directory: `/opt/instagram-hunter`
 - Compose project: `insta_hunter`
-- Application image: `instagram-hunter:0.1.12`
-- Active database: `instagram_hunter_v1`, complete schema version `1`.
+- Application image: `instagram-hunter:0.2.0`
+- Active database: `instagram_hunter_v2`, complete schema version `2`.
 - Web binding: `127.0.0.1:13002`; public traffic terminates at the system Nginx.
 - TLS certificate is managed by Certbot and is valid through 2026-10-19.
 - PostgreSQL is reachable only inside the Compose network.
@@ -91,6 +91,18 @@ The first live LLM search-query proposal exposed a provider-contract edge case: 
 Release `0.1.12` restores the latest successful LLM search-query list whenever the candidate page opens. This makes completed suggestions persistent across refreshes, fills the first query without another LLM call, preserves all alternatives, and provides a separate explicit action to regenerate them.
 
 Release `0.1.13` removes the ambiguous row of query buttons. The first LLM result is rendered directly into a larger search field, alternative phrases are exposed through the field's native suggestion list, and only the primary `Найти кандидатов` action starts discovery. A completed asynchronous LLM job refreshes the page automatically so the generated value appears without a second action.
+
+## Deployment 0.2.0
+
+Release commit `eb6a0940b2225dec668eacd562f5cc66c02a0afb` was pushed to `origin/master`. The release archive SHA-256 was `643a058d05d2061bdd86a2289dcb4c2b6d32afbdaf36a6b2d29c6ce3414aacc4`; the immutable local image ID is `sha256:e7fcccbc67a2a95b6960c48b34d1c25d44d414f06b54364708cf778dc84cd0ce`.
+
+The release adds a personalized barter-outreach workflow. First approval of a candidate atomically enqueues `draft_outreach`; the LLM stores a message and a separate internal personalization reason. The administrator can edit and approve the current text in one action, reject it or request another draft. The drawer polls while generation is active. No external message is sent.
+
+The schema-changing release used the approved blue/green process. A full rehearsal restored schema v1, initialized schema v2 from the complete `db/schema.sql`, copied all existing data and compared exact counts for 17 transferred tables. The release image accepted only v2 and the rollback image accepted only v1. The rehearsal web returned healthy liveness and readiness.
+
+Production writers were stopped at `2026-07-22T08:47:23Z` and restarted on v2 at `2026-07-22T08:47:37Z`. All transferred counts matched: 43 accounts, 42 profiles, 64 reels, 51 jobs, 68 job attempts, six LLM logs, one evaluation and one active criteria version. The new `outreach_proposals` table started empty. Public HTTPS readiness, web health and both worker heartbeats passed after cutover.
+
+Rollback assets are retained under `/opt/instagram-hunter-rollbacks/0.2.0`: application `0.1.12`, its protected environment file and the unchanged `instagram_hunter_v1` database. Final v1 dump SHA-256: `5a78daaf018799b7691330f4c0d5620d38ffe3cff5aac460430f9faa57b2a0c6`. The pre-cutover dump SHA-256 is `187986d14b4b7b2630c8645aec24c2ea1a01492640f9c39bc31bc7bcb96d767e`. Temporary rehearsal databases, scripts, archives and images `0.1.1`–`0.1.11` were removed. `checkit` remained healthy and `million-items-postgres` remained stopped.
 
 ## Next operational action
 
