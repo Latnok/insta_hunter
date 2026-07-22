@@ -6,6 +6,7 @@
 
 ## Документация
 
+- [Краткое руководство пользователя со скриншотами](docs/user-guide.md)
 - [Продуктовая спецификация](docs/product-spec.md)
 - [Архитектура и SQL-модель](docs/architecture.md)
 - [Pipeline и правила обработки](docs/pipeline.md)
