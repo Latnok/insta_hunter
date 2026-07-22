@@ -1,5 +1,15 @@
 # Detailed TODO — Express/Node.js migration
 
+## Same-origin изображения — 2026-07-22
+
+- [x] Убрать прямые Instagram/Facebook CDN URL из `img src` для аватарок и preview рилсов.
+- [x] Добавить authenticated same-origin endpoints по ID account/reel без передачи произвольного URL клиентом.
+- [x] Защитить server-side загрузку от SSRF через DNS/IP validation и pinning.
+- [x] Ограничить MIME изображениями, размер 8 MB, redirects, timeout и concurrency.
+- [x] Проверить HTML, authentication, 400/404 и успешную отдачу image response тестами.
+- [x] Прогнать 68/68 default/UI и 42/42 PostgreSQL integration/security тестов.
+- [ ] Развернуть schema-compatible release `0.2.4` и проверить реальные avatar/thumbnail responses через production same-origin endpoints.
+
 ## Автоматизация поиска и LLM-критериев — 2026-07-22
 
 - [x] Считать только первые решения `candidate → approved/rejected`, исключив archive/restore из обучающего сигнала.

@@ -136,6 +136,14 @@ Release commit `6d300fb` was pushed to `origin/master`. The release archive SHA-
 
 After rollout, web and worker are healthy on `instagram-hunter:0.2.3`, schema v2 is compatible and the public login is reachable. A one-time transactional backfill created 15 pipelines and 30 initial jobs only for existing discovery candidates without any prior pipeline; the live worker immediately began profile, reels and transcript processing. `checkit` remains healthy and `million-items-postgres` remains stopped.
 
+## Deployment 0.2.4
+
+This schema-compatible release fixes Chromium `ERR_BLOCKED_BY_RESPONSE.NotSameOrigin` failures for blogger avatars and reel previews. Templates now use authenticated same-origin media URLs; the server resolves the stored upstream URL by internal account/reel ID and returns the validated image without exposing CDN URLs to the browser.
+
+The proxy does not accept arbitrary URLs. It rejects private, loopback and metadata destinations, pins a validated public DNS address to prevent rebinding, permits only common image MIME types, limits responses to 8 MB, follows at most three validated redirects, times out after 15 seconds and permits at most four concurrent upstream image requests per web process. Responses use private ten-minute browser caching.
+
+Syntax/default/UI tests passed 68/68 and the isolated PostgreSQL 16 integration/security suite passed 42/42. The production dependency audit found no known vulnerabilities. A read-only pre-release probe from the VPS confirmed that the latest stored avatar and thumbnail both return `200 image/jpeg` to the server.
+
 ## Next operational action
 
 The OpenAI key was shared in chat. Rotate it in the OpenAI dashboard, update only `LLM_API_KEY` in `/opt/instagram-hunter/.env`, and recreate `web` and `worker`. Do not change the provider keys or other projects during that rotation.

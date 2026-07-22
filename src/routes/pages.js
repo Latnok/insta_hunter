@@ -4,11 +4,50 @@ import { listJobs } from '../db/repositories/jobs.js';
 import { jobStatuses, jobTypes, parseListQuery, transcriptQualities } from '../domain/query.js';
 import { resolveLlmPrompts } from '../domain/llm-prompts.js';
 import { resolveCriteriaAutomation } from '../domain/criteria-automation.js';
+import { downloadImage } from '../providers/image-download.js';
+import { Semaphore } from '../lib/semaphore.js';
 
 const pageSize = 24;
 
-export function createPageRouter({ pool, config }) {
+export function createPageRouter({ pool, config, imageLoader = downloadImage }) {
   const router = Router();
+  const imageSemaphore = new Semaphore(4);
+
+  async function serveStoredImage(req, res, { query, id }) {
+    if (!/^\d+$/.test(id)) return res.status(400).send('Invalid media ID');
+    const result = await pool.query(query, [id]);
+    const sourceUrl = result.rows[0]?.source_url;
+    if (!sourceUrl) return res.status(404).send('Image not found');
+
+    const controller = new AbortController();
+    res.once('close', () => {
+      if (!res.writableEnded) controller.abort(new DOMException('Client disconnected', 'AbortError'));
+    });
+    try {
+      const image = await imageSemaphore.run(
+        () => imageLoader(sourceUrl, { signal: controller.signal }),
+        { signal: controller.signal }
+      );
+      res.set({
+        'Cache-Control': 'private, max-age=600',
+        'Content-Type': image.contentType,
+        'Content-Length': String(image.body.length)
+      });
+      return res.send(image.body);
+    } catch (error) {
+      req.log?.warn({ err: error }, 'stored image proxy failed');
+      return res.status(502).send('Image temporarily unavailable');
+    }
+  }
+
+  router.get('/media/accounts/:id/avatar', (req, res) => serveStoredImage(req, res, {
+    id: req.params.id,
+    query: 'select avatar_url as source_url from account_profiles where account_id=$1'
+  }));
+  router.get('/media/reels/:id/thumbnail', (req, res) => serveStoredImage(req, res, {
+    id: req.params.id,
+    query: 'select thumbnail_url as source_url from reels where id=$1'
+  }));
 
   router.get('/', (_req, res) => res.redirect('/candidates'));
   router.get('/candidates', async (req, res) => {

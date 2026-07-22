@@ -1,7 +1,7 @@
 <article class="card account-card">
   <button class="card-open" hx-get="/ui/accounts/<%= account.id %>" hx-target="#drawer" hx-swap="innerHTML" aria-label="Open <%= account.username %>">
     <div class="avatar-wrap">
-      <% if (account.avatar_url) { %><img class="avatar" src="<%= account.avatar_url %>" alt=""><% } else { %><span class="avatar placeholder">@</span><% } %>
+      <% if (account.avatar_url) { %><img class="avatar" src="/media/accounts/<%= account.id %>/avatar" alt="" loading="lazy"><% } else { %><span class="avatar placeholder">@</span><% } %>
       <span class="status-dot <%= account.profile_status || 'unknown' %>"></span>
     </div>
     <div class="card-main">

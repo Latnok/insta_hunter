@@ -16,7 +16,7 @@ import { getSchemaStatus } from './db/schema.js';
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 
-export function createApp({ config, pool, logger }) {
+export function createApp({ config, pool, logger, imageLoader }) {
   const app = express();
   const PgSession = connectPgSimple(session);
   app.set('trust proxy', config.isProduction ? 1 : false);
@@ -83,7 +83,7 @@ export function createApp({ config, pool, logger }) {
 
   app.use(requireAuth);
   app.use(verifyCsrf);
-  app.use(createPageRouter({ pool, config }));
+  app.use(createPageRouter({ pool, config, imageLoader }));
   app.use(createActionRouter({ pool, config }));
 
   app.use((req, res) => res.status(404).render('error', { status: 404, message: 'Not found' }));

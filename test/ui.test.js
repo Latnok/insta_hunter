@@ -21,6 +21,29 @@ test('candidate page explains discovery and hides the discovery run table', asyn
   assert.doesNotMatch(html, /Discovery runs|fashion moscow|\/ui\/discovery-runs/);
 });
 
+test('avatars and reel previews use authenticated same-origin media URLs', async () => {
+  const card = await ejs.renderFile(path.join(views, 'partials/account-card.ejs'), {
+    locale: 'ru', csrfToken: 'csrf-token', t: (key) => key, mode: 'candidates',
+    config: { REELS_DEFAULT_LIMIT: 3 },
+    account: {
+      id: 17, username: 'media_creator', lifecycle_status: 'candidate',
+      avatar_url: 'https://cdn.example.invalid/avatar.jpg', profile_status: 'available',
+      display_name: 'Creator', bio: null, followers: 10, reels_count: 1,
+      useful_reels_count: 0, pipeline_status: null, is_stale: false
+    }
+  });
+  const reel = await ejs.renderFile(path.join(views, 'partials/reel-drawer.ejs'), {
+    reel: {
+      id: 29, username: 'media_creator', thumbnail_url: 'https://cdn.example.invalid/preview.jpg',
+      reel_url: 'https://instagram.com/reel/example', transcript_status: 'pending'
+    }
+  });
+
+  assert.match(card, /src="\/media\/accounts\/17\/avatar"/);
+  assert.match(reel, /src="\/media\/reels\/29\/thumbnail"/);
+  assert.doesNotMatch(card + reel, /cdn\.example\.invalid/);
+});
+
 test('approved blogger drawer presents personalized outreach for human approval', async () => {
   const html = await ejs.renderFile(path.join(views, 'partials/account-drawer.ejs'), {
     locale: 'ru', csrfToken: 'csrf-token', t: (key) => key,

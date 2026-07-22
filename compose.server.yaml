@@ -1,20 +1,20 @@
 services:
   schema:
-    image: instagram-hunter:0.2.3
+    image: instagram-hunter:0.2.4
     mem_limit: 256m
 
   seed:
-    image: instagram-hunter:0.2.3
+    image: instagram-hunter:0.2.4
     mem_limit: 256m
 
   web:
-    image: instagram-hunter:0.2.3
+    image: instagram-hunter:0.2.4
     ports:
       - "127.0.0.1:13002:3000"
     mem_limit: 256m
 
   worker:
-    image: instagram-hunter:0.2.3
+    image: instagram-hunter:0.2.4
     mem_limit: 320m
 
   postgres:

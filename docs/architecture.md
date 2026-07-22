@@ -345,6 +345,7 @@ HTMX partial routes могут использовать namespace `/ui/*`, но 
 ## 7. Безопасность
 
 - `helmet` с CSP, совместимой с локальными assets и HTMX.
+- Аватарки и thumbnail рилсов не встраиваются с внешних CDN напрямую. Authenticated same-origin media endpoints находят сохранённый URL только по внутреннему ID, проверяют DNS/IP против SSRF, фиксируют проверенный IP для запроса, принимают только image MIME и ограничивают timeout, redirects, размер и concurrency.
 - CSRF token для всех state-changing форм.
 - Login rate limit по IP и username.
 - Cookie: `HttpOnly`, `Secure` в production, `SameSite=Lax`.

@@ -118,6 +118,54 @@ integration('authentication and request security', () => {
     assert.doesNotMatch(ready.text, /internal-user|secret|database\/private/);
   });
 
+  test('stored images are proxied through authenticated same-origin routes', async () => {
+    const loaded = [];
+    const imageLoader = async (url) => {
+      loaded.push(url);
+      return { body: Buffer.from([0x89, 0x50, 0x4e, 0x47]), contentType: 'image/png' };
+    };
+    const account = (await pool.query(`
+      insert into instagram_accounts(username,instagram_url,source_type)
+      values ('security_media_proxy','https://www.instagram.com/security_media_proxy/','manual')
+      returning id
+    `)).rows[0];
+    await pool.query(`
+      insert into account_profiles(account_id,username,avatar_url,profile_status,provider,fetched_at)
+      values ($1,'security_media_proxy','https://cdn.example.invalid/avatar.jpg','available','fixture',now())
+    `, [account.id]);
+    const reel = (await pool.query(`
+      insert into reels(account_id,instagram_media_id,reel_url,thumbnail_url,fetched_at)
+      values ($1,'security-media-proxy','https://www.instagram.com/reel/security-media-proxy/',
+        'https://cdn.example.invalid/thumbnail.jpg',now()) returning id
+    `, [account.id])).rows[0];
+
+    try {
+      const app = createApp({ config: config(), pool, logger, imageLoader });
+      await request(app).get(`/media/accounts/${account.id}/avatar`)
+        .expect(302).expect('Location', '/login');
+
+      const agent = request.agent(app);
+      const loginPage = await agent.get('/login').expect(200);
+      await agent.post('/auth/login').type('form').send({
+        _csrf: csrfFrom(loginPage), username: 'admin', password
+      }).expect(302);
+
+      await agent.get(`/media/accounts/${account.id}/avatar`)
+        .expect(200).expect('Content-Type', 'image/png')
+        .expect('Cache-Control', 'private, max-age=600');
+      await agent.get(`/media/reels/${reel.id}/thumbnail`)
+        .expect(200).expect('Content-Type', 'image/png');
+      await agent.get('/media/accounts/not-a-number/avatar').expect(400);
+      await agent.get('/media/reels/999999999/thumbnail').expect(404);
+      assert.deepEqual(loaded, [
+        'https://cdn.example.invalid/avatar.jpg',
+        'https://cdn.example.invalid/thumbnail.jpg'
+      ]);
+    } finally {
+      await pool.query('delete from instagram_accounts where id=$1', [account.id]);
+    }
+  });
+
   test('list pages reject malformed pagination and unsupported filters with 400', async () => {
     const app = createApp({ config: config(), pool, logger });
     const agent = request.agent(app);
