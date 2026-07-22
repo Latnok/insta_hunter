@@ -2,10 +2,11 @@ import os from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
 import { loadConfig } from './config/index.js';
 import { createPool } from './db/pool.js';
-import { reserveJob, completeJob, failJob, heartbeatJob, recoverStaleJobs } from './db/repositories/jobs.js';
+import { recoverStaleJobs } from './db/repositories/jobs.js';
 import { createInstagramProviders } from './providers/instagram.js';
 import { createLlmClient } from './providers/llm.js';
-import { createJobHandlers, maybeAdvancePipeline } from './jobs/handlers.js';
+import { createJobHandlers } from './jobs/handlers.js';
+import { runWorkerSlot } from './jobs/runner.js';
 import { createLogger } from './lib/logger.js';
 
 const config = loadConfig();
@@ -22,49 +23,29 @@ await pool.query(`
   on conflict(worker_id) do update set process_id=excluded.process_id,hostname=excluded.hostname,started_at=now(),heartbeat_at=now()
 `, [workerId, process.pid, os.hostname()]);
 const heartbeatTimer = setInterval(() => {
-  pool.query(`update worker_heartbeats set heartbeat_at=now() where worker_id=$1`, [workerId]).catch((error) => logger.error({ err: error }, 'worker heartbeat failed'));
+  pool.query(`update worker_heartbeats set heartbeat_at=now() where worker_id=$1 or worker_id like $2`, [workerId, `${workerId}:slot:%`])
+    .catch((error) => logger.error({ err: error }, 'worker heartbeat failed'));
 }, 15_000);
 heartbeatTimer.unref();
 
-async function loop(slot) {
+async function superviseSlot(slot) {
+  const slotWorkerId = `${workerId}:slot:${slot}`;
   while (!stopping) {
-    const job = await reserveJob(pool, `${workerId}:${slot}`);
-    if (!job) { await delay(750); continue; }
-    const log = logger.child({ jobId: job.id, jobType: job.job_type, accountId: job.account_id, slot });
-    let heartbeatBusy = false;
-    const jobHeartbeatTimer = setInterval(async () => {
-      if (heartbeatBusy) return;
-      heartbeatBusy = true;
-      try {
-        if (!await heartbeatJob(pool, job)) log.warn('job lease heartbeat rejected');
-      } catch (error) {
-        log.error({ err: error }, 'job lease heartbeat failed');
-      } finally {
-        heartbeatBusy = false;
-      }
-    }, 30_000);
-    jobHeartbeatTimer.unref();
-    let transitioned = false;
     try {
-      const handler = handlers[job.job_type];
-      if (!handler) throw new Error(`No handler for ${job.job_type}`);
-      const result = await handler(job);
-      transitioned = await completeJob(pool, job, result || {});
-      if (transitioned) log.info('job succeeded');
-      else log.warn('job result discarded because lease ownership changed');
+      await pool.query(`
+        insert into worker_heartbeats(worker_id,process_id,hostname) values ($1,$2,$3)
+        on conflict(worker_id) do update set process_id=excluded.process_id,hostname=excluded.hostname,started_at=now(),heartbeat_at=now()
+      `, [slotWorkerId, process.pid, os.hostname()]);
+      await runWorkerSlot({ slot, workerId, context, handlers, shouldStop: () => stopping });
     } catch (error) {
-      transitioned = await failJob(pool, job, error);
-      if (transitioned) log.error({ err: error }, 'job failed');
-      else log.warn({ err: error }, 'job failure discarded because lease ownership changed');
-    } finally {
-      clearInterval(jobHeartbeatTimer);
+      logger.error({ err: error, slot }, 'worker slot stopped unexpectedly; restarting');
+      if (!stopping) await delay(1_000);
     }
-    if (transitioned) await maybeAdvancePipeline(context, job.pipeline_run_id);
   }
 }
 
 logger.info({ workerId, concurrency: config.WORKER_CONCURRENCY }, 'worker started');
-const loops = Array.from({ length: config.WORKER_CONCURRENCY }, (_, slot) => loop(slot));
+const loops = Array.from({ length: config.WORKER_CONCURRENCY }, (_, slot) => superviseSlot(slot));
 
 async function shutdown(signal) {
   if (stopping) return;
@@ -72,7 +53,7 @@ async function shutdown(signal) {
   clearInterval(heartbeatTimer);
   logger.info({ signal }, 'worker stopping');
   await Promise.allSettled(loops);
-  await pool.query('delete from worker_heartbeats where worker_id=$1', [workerId]).catch(() => {});
+  await pool.query('delete from worker_heartbeats where worker_id=$1 or worker_id like $2', [workerId, `${workerId}:slot:%`]).catch(() => {});
   await pool.end();
   process.exit(0);
 }

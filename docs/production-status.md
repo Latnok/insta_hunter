@@ -34,7 +34,7 @@ Provider credentials for ScrapCreators, SocialCrawl and Groq were copied server-
 - OpenAI structured-JSON smoke: succeeded with `gpt-5.6-terra`.
 - Automated test stage: 19/19 default tests passed; 47 JavaScript files and 14 EJS templates were checked.
 - PostgreSQL integration/security/queue/idempotency stage: 17/17 tests passed against a disposable PostgreSQL 16 instance.
-- Latest verification: 25/25 integration tests and 40/40 default tests pass without live API calls.
+- Latest verification: 26/26 integration tests and 42/42 default tests pass without live API calls.
 
 No real candidate recommendation was produced from the sampled account because its reels contained no useful spoken review. This is a content limitation, not an integration failure.
 

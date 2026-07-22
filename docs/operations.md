@@ -107,6 +107,7 @@ Restore drill выполняется перед первым production запу
 - Queue UI;
 - counts pending/running/failed;
 - время последнего worker heartbeat;
+- число свежих slot heartbeat должно быть не меньше `WORKER_CONCURRENCY`; `worker-health` проверяет это отдельно для hostname контейнера;
 - последний успешный backup timestamp;
 - provider error metadata;
 - LLM usage и latency в настройках/деталях run.

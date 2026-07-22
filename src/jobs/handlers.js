@@ -313,30 +313,55 @@ export async function maybeAdvancePipeline(context, pipelineRunId) {
       return;
     }
     await client.query(`update pipeline_runs set status='running',started_at=coalesce(started_at,now()) where id=$1`, [run.id]);
-    const jobs = (await client.query('select job_type,status from jobs where pipeline_run_id=$1', [run.id])).rows;
+    const jobs = (await client.query('select job_type,status,error_summary from jobs where pipeline_run_id=$1', [run.id])).rows;
     if (jobs.some((item) => ['pending','running','retry_wait'].includes(item.status))) return;
     const evaluationJob = jobs.find((item) => item.job_type === 'evaluate_candidate');
     if (evaluationJob) {
       const status = evaluationJob.status === 'succeeded' ? 'succeeded' : 'failed';
-      await client.query(`update pipeline_runs set status=$2,finished_at=now() where id=$1`, [run.id, status]);
+      await client.query(`
+        update pipeline_runs set status=$2,error_summary=$3,finished_at=now() where id=$1
+      `, [run.id, status, status === 'failed' ? jobFailureSummary([evaluationJob]) : null]);
       return;
     }
     if (run.run_type === 'blogger_refresh') {
-      const status = jobs.some((item) => item.status === 'failed') ? 'failed' : 'succeeded';
-      await client.query(`update pipeline_runs set status=$2,finished_at=now() where id=$1`, [run.id, status]);
+      const failures = jobs.filter((item) => item.status === 'failed');
+      const status = failures.length ? 'failed' : 'succeeded';
+      await client.query(`
+        update pipeline_runs set status=$2,error_summary=$3,finished_at=now() where id=$1
+      `, [run.id, status, failures.length ? jobFailureSummary(failures) : null]);
       return;
     }
     const ready = await client.query(`
       select exists(select 1 from account_profiles where account_id=$1 and profile_status='available') as profile,
              exists(select 1 from reels where account_id=$1 and transcript_quality='useful') as useful
     `, [run.account_id]);
-    if (ready.rows[0].profile && ready.rows[0].useful) {
+    const mandatoryFailures = jobs.filter((item) =>
+      item.status === 'failed' && ['fetch_profile', 'fetch_reels'].includes(item.job_type)
+    );
+    const contentFailures = ready.rows[0].useful ? [] : jobs.filter((item) =>
+      item.status === 'failed' && ['fetch_transcript', 'classify_transcript'].includes(item.job_type)
+    );
+    const technicalFailures = [...mandatoryFailures, ...contentFailures];
+    if (technicalFailures.length) {
+      await client.query(`
+        update pipeline_runs set status='failed',error_summary=$2,finished_at=now() where id=$1
+      `, [run.id, jobFailureSummary(technicalFailures)]);
+    } else if (ready.rows[0].profile && ready.rows[0].useful) {
       await enqueueJob(client, {
         pipelineRunId: run.id, accountId: run.account_id, jobType: 'evaluate_candidate', payload: {},
         dedupeKey: `run:${run.id}:evaluate`, maxAttempts: config.JOB_MAX_ATTEMPTS
       });
     } else {
-      await client.query(`update pipeline_runs set status='insufficient_data',finished_at=now() where id=$1`, [run.id]);
+      await client.query(`
+        update pipeline_runs set status='insufficient_data',error_summary=null,finished_at=now() where id=$1
+      `, [run.id]);
     }
   });
+}
+
+function jobFailureSummary(jobs) {
+  return jobs
+    .map((job) => `${job.job_type}: ${job.error_summary || 'failed without error detail'}`)
+    .join('; ')
+    .slice(0, 2000);
 }

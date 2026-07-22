@@ -3,7 +3,7 @@ import { after, before, beforeEach, describe, test } from 'node:test';
 import pg from 'pg';
 
 import { initializeSchema } from '../../src/db/schema.js';
-import { createJobHandlers } from '../../src/jobs/handlers.js';
+import { createJobHandlers, maybeAdvancePipeline } from '../../src/jobs/handlers.js';
 import { rejectAccount } from '../../src/services/accounts.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
@@ -284,5 +284,59 @@ integration('job handler idempotency after worker restart', () => {
     assert.equal(reels.rows[0].count, 0);
     assert.equal(downstream.rows[0].count, 0);
     assert.equal(storedRun.rows[0].status, 'cancelled');
+  });
+
+  test('pipeline distinguishes exhausted technical failures from insufficient content', async () => {
+    async function pipeline(username) {
+      const account = (await pool.query(`
+        insert into instagram_accounts(username,instagram_url,source_type)
+        values ($1,$2,'manual') returning *
+      `, [username, `https://www.instagram.com/${username}/`])).rows[0];
+      const run = (await pool.query(`
+        insert into pipeline_runs(account_id,run_type,reels_limit)
+        values ($1,'candidate_enrichment',3) returning *
+      `, [account.id])).rows[0];
+      return { account, run };
+    }
+    async function terminalJob({ account, run }, type, status, error = null, suffix = '') {
+      await pool.query(`
+        insert into jobs(account_id,pipeline_run_id,job_type,dedupe_key,status,error_summary)
+        values ($1,$2,$3,$4,$5,$6)
+      `, [account.id, run.id, type, `terminal:${run.id}:${type}:${suffix}`, status, error]);
+    }
+
+    const providerFailure = await pipeline('provider_failure');
+    await terminalJob(providerFailure, 'fetch_profile', 'failed', 'upstream returned 503');
+    await terminalJob(providerFailure, 'fetch_reels', 'succeeded');
+    await maybeAdvancePipeline({ pool, config }, providerFailure.run.id);
+    const failedRun = (await pool.query('select status,error_summary from pipeline_runs where id=$1', [providerFailure.run.id])).rows[0];
+    assert.equal(failedRun.status, 'failed');
+    assert.match(failedRun.error_summary, /fetch_profile: upstream returned 503/);
+
+    const transcriptFailure = await pipeline('transcript_failure');
+    await pool.query(`
+      insert into account_profiles(account_id,username,profile_status,provider,fetched_at)
+      values ($1,$2,'available','fixture',now())
+    `, [transcriptFailure.account.id, transcriptFailure.account.username]);
+    await terminalJob(transcriptFailure, 'fetch_profile', 'succeeded');
+    await terminalJob(transcriptFailure, 'fetch_reels', 'succeeded');
+    await terminalJob(transcriptFailure, 'fetch_transcript', 'failed', 'all transcript providers timed out');
+    await maybeAdvancePipeline({ pool, config }, transcriptFailure.run.id);
+    const transcriptFailedRun = (await pool.query('select status,error_summary from pipeline_runs where id=$1', [transcriptFailure.run.id])).rows[0];
+    assert.equal(transcriptFailedRun.status, 'failed');
+    assert.match(transcriptFailedRun.error_summary, /fetch_transcript: all transcript providers timed out/);
+
+    const noisyContent = await pipeline('noisy_content');
+    await pool.query(`
+      insert into account_profiles(account_id,username,profile_status,provider,fetched_at)
+      values ($1,$2,'available','fixture',now())
+    `, [noisyContent.account.id, noisyContent.account.username]);
+    await terminalJob(noisyContent, 'fetch_profile', 'succeeded');
+    await terminalJob(noisyContent, 'fetch_reels', 'succeeded');
+    await terminalJob(noisyContent, 'fetch_transcript', 'succeeded');
+    await terminalJob(noisyContent, 'classify_transcript', 'succeeded');
+    await maybeAdvancePipeline({ pool, config }, noisyContent.run.id);
+    const insufficientRun = (await pool.query('select status,error_summary from pipeline_runs where id=$1', [noisyContent.run.id])).rows[0];
+    assert.deepEqual(insufficientRun, { status: 'insufficient_data', error_summary: null });
   });
 });

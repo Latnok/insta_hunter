@@ -432,14 +432,14 @@ Definition of Done:
 - [x] Cover network, 404, 408, 429, 5xx, invalid JSON, empty result and non-retryable 400 branches without live API.
 - [x] Prove discovery creates candidate/source rows without enrichment jobs.
 - [x] Prove fresh profile/reels use cache while force refresh calls providers and upserts the existing reel.
-- [x] Pass 25/25 PostgreSQL integration tests and 40/40 default tests.
+- [x] Pass 26/26 PostgreSQL integration tests and 42/42 default tests.
 
 ## Debug-аудит — 2026-07-22
 
 Проверено локально:
 
-- `npm run check`: успешно, 50 JavaScript-файлов и 14 EJS-шаблонов.
-- `npm test`: 40 default-тестов успешно; отдельный PostgreSQL-прогон — 25/25.
+- `npm run check`: успешно, 53 JavaScript-файла и 14 EJS-шаблонов.
+- `npm test`: 42 default-теста успешно; отдельный PostgreSQL-прогон — 26/26.
 - `npm audit --omit=dev`: 0 известных уязвимостей.
 - Docker integration suite выполнен на одноразовой PostgreSQL 16; контейнеры, сеть, volume и тестовые образы удалены.
 - Состав первого Git-коммита проверен на секреты и временные артефакты.
@@ -460,8 +460,8 @@ Definition of Done:
 
 ### P1 — надёжность и тестируемость
 
-- [ ] Не маскировать технический failure как `insufficient_data`: если исчерпаны попытки обязательного profile/reels/transcript job, pipeline должен завершаться `failed`/`partial` с `error_summary`; `insufficient_data` оставлять только для успешно полученных, но реально недостаточных данных.
-- [ ] Защитить worker slot от тихой остановки: ошибки `reserveJob`, `failJob` и `maybeAdvancePipeline` сейчас находятся вне общего supervisor. Добавить верхнеуровневый catch/backoff, метрику живых slots и тест на временный DB failure.
+- [x] Не маскировать технический failure как `insufficient_data`: исчерпание обязательного profile/reels или всех transcript/classify jobs без полезного результата завершает pipeline как `failed` с агрегированным `error_summary`; `insufficient_data` остаётся для успешно обработанных пустых/шумовых данных.
+- [x] Защитить worker slot от тихой остановки: `reserveJob`, terminal job update и `maybeAdvancePipeline` изолированы supervisor-ом с backoff; каждый slot публикует отдельный heartbeat, healthcheck проверяет ожидаемое число живых slots, временные DB failures покрыты тестами.
 - [x] Ограничить manual retry значением DB constraint: бюджет увеличивается максимум до 10 попыток, а retry при `attempts >= 10` возвращает контролируемый конфликт.
 - [ ] Сделать CSV commit атомарным для всего preview или явно реализовать resumable import batch. Сейчас каждая строка и каждый pipeline создаются отдельными транзакциями, поэтому ошибка в середине оставляет частичный импорт.
 - [ ] Ужесточить CSV contract: явно проверять UTF-8 и обязательное наличие `username` или `url` header, отклонять лишние/неполные колонки вместо `relax_column_count: true`, нормализовать Multer limit/parser errors в 4xx и добавить abuse-тесты.
