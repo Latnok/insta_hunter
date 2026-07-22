@@ -16,7 +16,7 @@
 - [x] Прогнать 67/67 default-тестов и 41/41 PostgreSQL integration-тестов на чистой schema v2.
 - [x] Развернуть schema-compatible release `0.2.2` и проверить созданные scheduler jobs, readiness и соседние сервисы.
 - [x] Автоматически запускать enrichment и LLM-анализ для найденных кандидатов без повторной обработки уже запущенных или завершённых pipeline.
-- [ ] Развернуть schema-compatible release `0.2.3`, поставить в очередь ранее найденных необработанных кандидатов и проверить production pipeline.
+- [x] Развернуть schema-compatible release `0.2.3`, поставить в очередь ранее найденных необработанных кандидатов и проверить production pipeline.
 
 ## Редактируемые промпты LLM — 2026-07-22
 

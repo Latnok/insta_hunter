@@ -7,7 +7,7 @@ Last verified: 2026-07-22.
 - Public URL: `https://insta.podedu.ru`
 - Server directory: `/opt/instagram-hunter`
 - Compose project: `insta_hunter`
-- Application image: `instagram-hunter:0.2.2`
+- Application image: `instagram-hunter:0.2.3`
 - Active database: `instagram_hunter_v2`, complete schema version `2`.
 - Web binding: `127.0.0.1:13002`; public traffic terminates at the system Nginx.
 - TLS certificate is managed by Certbot and is valid through 2026-10-19.
@@ -131,6 +131,10 @@ Schema compatibility, local/public readiness, login and worker heartbeat passed.
 This schema-compatible release makes discovery feed the existing candidate-processing pipeline automatically. Every discovered account that is still a candidate and has no prior pipeline gets profile and reels enrichment, transcript processing and, when useful content exists, an LLM evaluation. Rediscovery is idempotent: active and completed pipelines are not restarted, and non-candidate lifecycle states are preserved.
 
 Syntax/default/UI tests passed 67/67, the isolated PostgreSQL 16 suite passed 41/41 against clean schema v2, and the production dependency audit found no known vulnerabilities.
+
+Release commit `6d300fb` was pushed to `origin/master`. The release archive SHA-256 was `13b5773c327a3badb6768f56e6bed23204b457aac7dd2e47afd0f7a7fe7317f0`. Pre-deployment backup: `instagram_hunter_20260722T102641Z.dump`.
+
+After rollout, web and worker are healthy on `instagram-hunter:0.2.3`, schema v2 is compatible and the public login is reachable. A one-time transactional backfill created 15 pipelines and 30 initial jobs only for existing discovery candidates without any prior pipeline; the live worker immediately began profile, reels and transcript processing. `checkit` remains healthy and `million-items-postgres` remains stopped.
 
 ## Next operational action
 
