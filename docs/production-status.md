@@ -122,7 +122,7 @@ This schema-compatible release adds the five-minute scheduler, threshold/24-hour
 
 Syntax/default/UI tests passed 67/67 and the isolated PostgreSQL 16 suite passed 41/41 against clean schema v2. The server build repeated the 67-test gate; the production dependency audit found no known vulnerabilities.
 
-The first production scheduler cycle correctly found no new decisions for a criteria draft and queued four low-priority discovery jobs for the configured daily budget of 20 accounts. Three queries succeeded, including two after bounded retry. SocialCrawl currently reports zero credits, so queries for which ScrapCreators returns no result cannot use that fallback; this is an external account limitation, not a scheduler failure.
+The first production scheduler cycle correctly found no new decisions for a criteria draft and queued four low-priority discovery jobs for the configured daily budget of 20 accounts. All four queries succeeded; three required bounded retry after transient/no-result responses. SocialCrawl currently reports zero credits, so ScrapCreators is effectively the only working discovery provider until that external account is replenished.
 
 Schema compatibility, local/public readiness, login and worker heartbeat passed. Web and worker are healthy on `instagram-hunter:0.2.2`; `checkit` remains healthy and `million-items-postgres` remains stopped. Temporary release files were removed.
 
