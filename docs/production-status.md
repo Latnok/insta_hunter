@@ -7,7 +7,7 @@ Last verified: 2026-07-22.
 - Public URL: `https://insta.podedu.ru`
 - Server directory: `/opt/instagram-hunter`
 - Compose project: `insta_hunter`
-- Application image: `instagram-hunter:0.2.3`
+- Application image: `instagram-hunter:0.2.5`
 - Active database: `instagram_hunter_v2`, complete schema version `2`.
 - Web binding: `127.0.0.1:13002`; public traffic terminates at the system Nginx.
 - TLS certificate is managed by Certbot and is valid through 2026-10-19.
@@ -145,6 +145,10 @@ The proxy does not accept arbitrary URLs. It rejects private, loopback and metad
 Syntax/default/UI tests passed 69/69 and the isolated PostgreSQL 16 integration/security suite passed 42/42. The production dependency audit found no known vulnerabilities. A read-only pre-release probe from the VPS confirmed that the latest stored avatar and thumbnail both return `200 image/jpeg` to the server.
 
 The first `0.2.4` production smoke exposed a Node 20.20 custom-DNS callback compatibility issue before the release was declared complete. Release `0.2.5` supports both single-address and `all` lookup modes in the shared pinned-DNS adapter used by image and Groq media downloads.
+
+Release commits `f3af65c` and `8dc66b7` were pushed to `origin/master`. The final `0.2.5` archive SHA-256 was `852c9071f7714c32bddd906621554a9dbafc9c26af7062cc842bd45ff6c4dcc0`. Pre-deployment backup: `instagram_hunter_20260722T104716Z.dump`.
+
+The production downloader smoke returned the latest stored avatar as `image/jpeg` with 13,089 bytes and the latest reel thumbnail as `image/jpeg` with 56,545 bytes. Web and worker are healthy on `instagram-hunter:0.2.5`, schema v2 is compatible and the public login is reachable. `checkit` remains healthy and `million-items-postgres` remains stopped.
 
 ## Next operational action
 

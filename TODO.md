@@ -8,7 +8,7 @@
 - [x] Ограничить MIME изображениями, размер 8 MB, redirects, timeout и concurrency.
 - [x] Проверить HTML, authentication, 400/404 и успешную отдачу image response тестами.
 - [x] Прогнать 69/69 default/UI и 42/42 PostgreSQL integration/security тестов.
-- [ ] Развернуть schema-compatible release `0.2.5` и проверить реальные avatar/thumbnail responses через production same-origin endpoints.
+- [x] Развернуть schema-compatible release `0.2.5` и проверить реальные avatar/thumbnail responses через production same-origin endpoints.
 
 ## Автоматизация поиска и LLM-критериев — 2026-07-22
 
