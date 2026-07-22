@@ -81,6 +81,7 @@ integration('job handler idempotency after worker restart', () => {
     };
     const handler = createJobHandlers({ pool, instagram, config }).discover_accounts;
 
+    await pool.query("update discovery_runs set status='failed',error_summary='stale provider error',finished_at=now() where id=$1", [run.rows[0].id]);
     await handler(job);
     await handler(job);
 
@@ -88,10 +89,26 @@ integration('job handler idempotency after worker restart', () => {
     const sources = await pool.query('select count(*)::int as count from account_sources where discovery_run_id=$1', [run.rows[0].id]);
     const pipelines = await pool.query('select count(*)::int as count from pipeline_runs');
     const enrichmentJobs = await pool.query("select count(*)::int as count from jobs where job_type <> 'discover_accounts'");
+    const storedRun = await pool.query('select status,error_summary from discovery_runs where id=$1', [run.rows[0].id]);
     assert.equal(accounts.rows[0].count, 1);
     assert.equal(sources.rows[0].count, 1);
     assert.equal(pipelines.rows[0].count, 0);
     assert.equal(enrichmentJobs.rows[0].count, 0);
+    assert.deepEqual(storedRun.rows[0], { status: 'succeeded', error_summary: null });
+  });
+
+  test('active pipeline clears a stale terminal error before waiting for remaining jobs', async () => {
+    const { account } = await accountWithContent();
+    const run = (await pool.query(`
+      insert into pipeline_runs(account_id,run_type,reels_limit,error_summary,finished_at)
+      values ($1,'candidate_enrichment',3,'stale provider error',now()) returning *
+    `, [account.id])).rows[0];
+    await insertJob('fetch_profile', account.id, { pipelineRunId: run.id, dedupeKey: 'pipeline:stale-error' });
+
+    await maybeAdvancePipeline({ pool, config }, run.id);
+
+    const storedRun = await pool.query('select status,error_summary,finished_at from pipeline_runs where id=$1', [run.id]);
+    assert.deepEqual(storedRun.rows[0], { status: 'running', error_summary: null, finished_at: null });
   });
 
   test('fresh profile and reels are cached while force refresh upserts without duplicates', async () => {

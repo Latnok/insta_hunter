@@ -248,12 +248,24 @@ integration('PostgreSQL job queue concurrency and recovery', () => {
     }));
     const failed = await reserveJob(pool, 'retry-worker');
     assert.equal(await failJob(pool, failed, new Error('failed once')), true);
-    await pool.query("update pipeline_runs set status='failed',finished_at=now() where id=$1", [valid.pipeline.id]);
+    await pool.query("update pipeline_runs set status='failed',error_summary='stale pipeline error',finished_at=now() where id=$1", [valid.pipeline.id]);
     const retried = await retryJob(pool, failed.id);
     assert.equal(retried.status, 'retry_wait');
     assert.equal(retried.max_attempts, 4);
-    const reopened = await pool.query('select status,finished_at from pipeline_runs where id=$1', [valid.pipeline.id]);
-    assert.deepEqual(reopened.rows[0], { status: 'running', finished_at: null });
+    const reopened = await pool.query('select status,error_summary,finished_at from pipeline_runs where id=$1', [valid.pipeline.id]);
+    assert.deepEqual(reopened.rows[0], { status: 'running', error_summary: null, finished_at: null });
+
+    const discovery = (await pool.query(`
+      insert into discovery_runs(query,requested_limit,status,error_summary,finished_at)
+      values ('retry discovery',5,'failed','stale discovery error',now()) returning *
+    `)).rows[0];
+    const discoveryJob = (await pool.query(`
+      insert into jobs(discovery_run_id,job_type,dedupe_key,status,attempts,error_summary)
+      values ($1,'discover_accounts','manual-retry:discovery','failed',1,'failed once') returning *
+    `, [discovery.id])).rows[0];
+    await retryJob(pool, discoveryJob.id);
+    const reopenedDiscovery = await pool.query('select status,error_summary,finished_at from discovery_runs where id=$1', [discovery.id]);
+    assert.deepEqual(reopenedDiscovery.rows[0], { status: 'running', error_summary: null, finished_at: null });
 
     await pool.query("update jobs set status='failed',attempts=10,max_attempts=10 where id=$1", [failed.id]);
     await assert.rejects(retryJob(pool, failed.id), /retry budget is exhausted/);

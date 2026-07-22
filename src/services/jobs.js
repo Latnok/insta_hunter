@@ -42,7 +42,7 @@ export async function cancelPipelineWork(client, pipelineRunId, reason) {
 
 async function lockJobContext(client, jobId) {
   const preview = (await client.query(
-    'select account_id,pipeline_run_id from jobs where id=$1',
+    'select account_id,pipeline_run_id,discovery_run_id from jobs where id=$1',
     [jobId]
   )).rows[0];
   if (!preview) throw Object.assign(new Error('Job not found'), { statusCode: 404 });
@@ -52,10 +52,14 @@ async function lockJobContext(client, jobId) {
   if (preview.pipeline_run_id) {
     await client.query('select id from pipeline_runs where id=$1 for update', [preview.pipeline_run_id]);
   }
+  if (preview.discovery_run_id) {
+    await client.query('select id from discovery_runs where id=$1 for update', [preview.discovery_run_id]);
+  }
   const selected = await client.query(`
-    select j.*, p.status as pipeline_status, p.run_type, a.lifecycle_status
+    select j.*, p.status as pipeline_status, p.run_type, d.status as discovery_status, a.lifecycle_status
     from jobs j
     left join pipeline_runs p on p.id=j.pipeline_run_id
+    left join discovery_runs d on d.id=j.discovery_run_id
     left join instagram_accounts a on a.id=j.account_id
     where j.id=$1
     for update of j
@@ -98,6 +102,15 @@ export async function retryJob(pool, jobId) {
         update pipeline_runs set status='running', error_summary=null, finished_at=null,
           started_at=coalesce(started_at,now()) where id=$1
       `, [job.pipeline_run_id]);
+    }
+    if (job.discovery_run_id) {
+      if (job.discovery_status === 'cancelled') {
+        throw Object.assign(new Error('Cancelled discovery runs cannot be retried'), { statusCode: 409 });
+      }
+      await client.query(`
+        update discovery_runs set status='running', error_summary=null, finished_at=null,
+          started_at=coalesce(started_at,now()) where id=$1
+      `, [job.discovery_run_id]);
     }
     const retried = await client.query(`
       update jobs set status='retry_wait', available_at=now(),

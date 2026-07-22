@@ -35,7 +35,10 @@ async function assertActivePipeline(client, job) {
 async function handleDiscovery(context, job) {
   const { pool, instagram } = context;
   const { query, limit } = job.payload;
-  await pool.query(`update discovery_runs set status='running', started_at=coalesce(started_at,now()) where id=$1`, [job.discovery_run_id]);
+  await pool.query(`
+    update discovery_runs set status='running', error_summary=null, finished_at=null,
+      started_at=coalesce(started_at,now()) where id=$1
+  `, [job.discovery_run_id]);
   try {
     const result = await instagram.search(query, limit, { signal: context.signal });
     await logProvider(pool, { provider: result.provider, operation: 'search', job, meta: result.requestMeta, outcome: 'succeeded' });
@@ -51,7 +54,7 @@ async function handleDiscovery(context, job) {
       }
       await client.query(`
         update discovery_runs set status='succeeded', found_count=$2, created_count=$3,
-          existing_count=$4, invalid_count=$5, finished_at=now() where id=$1
+          existing_count=$4, invalid_count=$5, error_summary=null, finished_at=now() where id=$1
       `, [job.discovery_run_id, counts.found, counts.created, counts.existing, counts.invalid]);
     });
     return counts;
@@ -318,7 +321,10 @@ export async function maybeAdvancePipeline(context, pipelineRunId) {
       await cancelPipelineWork(client, run.id, 'account lifecycle changed');
       return;
     }
-    await client.query(`update pipeline_runs set status='running',started_at=coalesce(started_at,now()) where id=$1`, [run.id]);
+    await client.query(`
+      update pipeline_runs set status='running',error_summary=null,finished_at=null,
+        started_at=coalesce(started_at,now()) where id=$1
+    `, [run.id]);
     const jobs = (await client.query('select job_type,status,error_summary from jobs where pipeline_run_id=$1', [run.id])).rows;
     if (jobs.some((item) => ['pending','running','retry_wait'].includes(item.status))) return;
     const evaluationJob = jobs.find((item) => item.job_type === 'evaluate_candidate');

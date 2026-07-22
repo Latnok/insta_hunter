@@ -179,6 +179,8 @@ Discovery выполняется как background job, поэтому HTTP-за
 
 Reject/archive и ручная отмена выполняются транзакционно: связанный активный pipeline и все его pending/running/retry jobs переходят в `cancelled`, текущий attempt закрывается, а поздний ответ worker отбрасывается fencing-проверкой. Перед записью provider/LLM результата handler повторно блокирует account и pipeline и проверяет соответствие lifecycle.
 
+Ручной retry блокирует job и связанный `pipeline_run`/`discovery_run` в одной транзакции, переоткрывает run и очищает прежние `error_summary`/`finished_at`. Worker также очищает terminal error при каждом переходе run обратно в `running` и при успешном завершении, поэтому UI не совмещает актуальный успешный статус с ошибкой прошлой попытки.
+
 Типы: `discover_accounts`, `fetch_profile`, `fetch_reels`, `fetch_transcript`, `classify_transcript`, `evaluate_candidate`, `propose_criteria`.
 
 Worker резервирует jobs через `FOR UPDATE SKIP LOCKED`. Просроченный lease возвращает job в `retry_wait` при старте/периодическом recovery.
