@@ -432,14 +432,14 @@ Definition of Done:
 - [x] Cover network, 404, 408, 429, 5xx, invalid JSON, empty result and non-retryable 400 branches without live API.
 - [x] Prove discovery creates candidate/source rows without enrichment jobs.
 - [x] Prove fresh profile/reels use cache while force refresh calls providers and upserts the existing reel.
-- [x] Pass 29/29 PostgreSQL integration tests and 50/50 default tests.
+- [x] Pass 30/30 PostgreSQL integration tests and 50/50 default tests.
 
 ## Debug-аудит — 2026-07-22
 
 Проверено локально:
 
-- `npm run check`: успешно, 54 JavaScript-файла и 14 EJS-шаблонов.
-- `npm test`: 50 default-тестов успешно; отдельный PostgreSQL-прогон — 29/29.
+- `npm run check`: успешно, 55 JavaScript-файлов и 14 EJS-шаблонов.
+- `npm test`: 50 default-тестов успешно; отдельный PostgreSQL-прогон — 30/30.
 - `npm audit --omit=dev`: 0 известных уязвимостей.
 - Docker integration suite выполнен на одноразовой PostgreSQL 16; контейнеры, сеть, volume и тестовые образы удалены.
 - Состав первого Git-коммита проверен на секреты и временные артефакты.
@@ -469,7 +469,7 @@ Definition of Done:
 - [ ] Логировать каждую provider attempt, а не только итогового победителя: сохранять failed fallback calls и ошибку Groq fallback с duration/status/request ID, применяя рекурсивную redaction к response payload перед записью в `provider_call_logs`.
 - [ ] При успешном retry очищать stale error state не только у `jobs`, но и у `discovery_runs`/`pipeline_runs`; UI не должен одновременно показывать `succeeded` и старый `error_summary`.
 - [ ] Валидировать и ограничивать `offset`, `status`, `quality` и `jobType` query-параметры. Отрицательный/NaN/чрезмерный offset сейчас доходит до PostgreSQL и превращает пользовательскую ошибку в 500; предпочтительнее cursor pagination для меняющихся списков.
-- [ ] Сериализовать выделение `criteria_versions.version_number` для manual и LLM drafts. `max(version_number)+1` без lock допускает race и unique violation; добавить concurrent integration test.
+- [x] Сериализовать выделение `criteria_versions.version_number`: manual/LLM drafts используют общий transactional service и advisory lock, общий также с activation; 12 конкурентных транзакций получают последовательные версии без unique violation.
 - [ ] До первого изменения production-схемы утвердить отдельный DBA-процесс upgrade/rollback; bootstrap полной схемы намеренно не модифицирует непустую БД.
 - [ ] Вынести PostgreSQL suites в обязательную CI-команду. Обычный `npm test` сейчас зелёный при трёх пропущенных integration/security/queue suites; CI должна поднимать временную БД и падать при skip.
 - [x] Добавить regression-тесты для running-job cancellation race и cancel→pipeline terminal state. Lease fencing, stale-job max attempts, liveness, безопасные 5xx и SSRF/media size limits также покрыты.

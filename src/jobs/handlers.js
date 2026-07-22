@@ -5,6 +5,7 @@ import { isStale } from '../domain/accounts.js';
 import { classifyTranscript, validateTranscriptRules } from '../domain/transcripts.js';
 import { transcribeWithGroq } from '../providers/groq.js';
 import { cancelPipelineWork } from '../services/jobs.js';
+import { createCriteriaDraft } from '../services/criteria.js';
 
 async function logProvider(pool, { provider, operation, job, meta, outcome, error }) {
   await pool.query(`
@@ -274,10 +275,15 @@ async function handleCriteriaProposal(context, job) {
           prompt_tokens,completion_tokens,latency_ms,status)
         values ('criteria_proposal',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'succeeded') returning id
       `, [job.id,criteria.id,config.LLM_BASE_URL,config.LLM_MODEL,JSON.stringify(messages),result.rawResponse,result.parsed,result.usage.prompt_tokens || null,result.usage.completion_tokens || null,result.meta.durationMs]);
-      await client.query(`
-        insert into criteria_versions(version_number,checklist_markdown,search_queries,transcript_rules,status,source,parent_version_id,diff_summary,source_job_id)
-        select coalesce(max(version_number),0)+1,$1,$2,$3,'draft','llm',$4,$5,$6 from criteria_versions
-      `, [result.parsed.checklist_markdown,JSON.stringify(result.parsed.search_queries),result.parsed.transcript_rules,criteria.id,`${result.parsed.diff_summary} (LLM log ${log.rows[0].id})`,job.id]);
+      await createCriteriaDraft(client, {
+        checklistMarkdown: result.parsed.checklist_markdown,
+        searchQueries: result.parsed.search_queries,
+        transcriptRules: result.parsed.transcript_rules,
+        source: 'llm',
+        parentVersionId: criteria.id,
+        diffSummary: `${result.parsed.diff_summary} (LLM log ${log.rows[0].id})`,
+        sourceJobId: job.id
+      });
     });
     return { proposed: true };
   } catch (error) {

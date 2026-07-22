@@ -9,6 +9,7 @@ import { validateTranscriptRules } from '../domain/transcripts.js';
 import { withTransaction } from '../db/pool.js';
 import { enqueueJob } from '../db/repositories/jobs.js';
 import { cancelJob, retryJob } from '../services/jobs.js';
+import { createCriteriaDraft, criteriaWriteLockKey } from '../services/criteria.js';
 
 function back(res, fallback = '/candidates') {
   res.set('HX-Redirect', fallback);
@@ -125,12 +126,13 @@ export function createActionRouter({ pool, config }) {
     } catch (error) {
       throw Object.assign(new Error(`Invalid criteria: ${error.message}`), { statusCode: 400 });
     }
-    await pool.query(`
-      insert into criteria_versions(version_number, checklist_markdown, search_queries, transcript_rules, status, source, parent_version_id, diff_summary)
-      select coalesce(max(version_number),0)+1, $1, $2, $3, 'draft', 'manual',
-             (select id from criteria_versions where status='active' limit 1), 'Manual draft'
-      from criteria_versions
-    `, [req.body.checklistMarkdown || '', JSON.stringify(queries), JSON.stringify(rules)]);
+    await withTransaction(pool, (client) => createCriteriaDraft(client, {
+      checklistMarkdown: req.body.checklistMarkdown || '',
+      searchQueries: queries,
+      transcriptRules: rules,
+      source: 'manual',
+      diffSummary: 'Manual draft'
+    }));
     return back(res, '/settings');
   });
 
@@ -148,7 +150,7 @@ export function createActionRouter({ pool, config }) {
 
   router.post('/criteria/:id/activate', async (req, res) => {
     await withTransaction(pool, async (client) => {
-      await client.query('select pg_advisory_xact_lock($1)', [424242]);
+      await client.query('select pg_advisory_xact_lock($1)', [criteriaWriteLockKey]);
       const draft = await client.query(`select * from criteria_versions where id=$1 and status='draft' for update`, [req.params.id]);
       if (!draft.rowCount) throw Object.assign(new Error('Draft not found'), { statusCode: 409 });
       validateTranscriptRules(draft.rows[0].transcript_rules);

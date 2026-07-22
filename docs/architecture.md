@@ -217,6 +217,8 @@ CSV принимает только корректный UTF-8 с header row. Р
 
 ### 4.10 `criteria_versions`
 
+Создание manual и LLM drafts проходит через единый transactional service. Перед вычислением `max(version_number)+1` он берёт тот же PostgreSQL advisory lock, что и activation, поэтому параллельные writers получают уникальные последовательные номера и согласованный active parent.
+
 - version number
 - checklist markdown
 - search queries JSONB array

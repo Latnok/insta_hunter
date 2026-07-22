@@ -4,6 +4,7 @@ import { after, before, beforeEach, describe, test } from 'node:test';
 import pg from 'pg';
 
 import { initializeSchema } from '../../src/db/schema.js';
+import { withTransaction } from '../../src/db/pool.js';
 import { upsertAccount } from '../../src/db/repositories/accounts.js';
 import { completeJob, enqueueJob, reserveJob } from '../../src/db/repositories/jobs.js';
 import {
@@ -13,6 +14,7 @@ import {
   restoreAccount
 } from '../../src/services/accounts.js';
 import { commitCsv } from '../../src/services/imports.js';
+import { createCriteriaDraft } from '../../src/services/criteria.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const integration = databaseUrl ? describe : describe.skip;
@@ -269,5 +271,33 @@ integration('PostgreSQL repositories, constraints and lifecycle transitions', ()
     assert.equal((await pool.query('select count(*)::int as count from pipeline_runs')).rows[0].count, 0);
     assert.equal((await pool.query('select count(*)::int as count from jobs')).rows[0].count, 0);
     assert.equal((await pool.query('select count(*)::int as count from csv_import_batches where id=$1', [previewId])).rows[0].count, 0);
+  });
+
+  test('concurrent manual and LLM drafts receive unique sequential version numbers', async () => {
+    const active = (await pool.query(`
+      insert into criteria_versions(version_number,checklist_markdown,status,source)
+      values (1,'active criteria','active','manual') returning id
+    `)).rows[0];
+    const rules = { noisePatterns: [], lowValuePatterns: [], minCharacters: 12, minWords: 3 };
+    const drafts = await Promise.all(Array.from({ length: 12 }, (_, index) =>
+      withTransaction(pool, (client) => createCriteriaDraft(client, {
+        checklistMarkdown: `draft ${index}`,
+        searchQueries: [`query ${index}`],
+        transcriptRules: rules,
+        source: index % 2 ? 'llm' : 'manual',
+        parentVersionId: index % 2 ? active.id : null,
+        diffSummary: `concurrent ${index}`
+      }))
+    ));
+
+    assert.equal(new Set(drafts.map((draft) => draft.version_number)).size, 12);
+    const stored = await pool.query(`
+      select version_number,parent_version_id,source from criteria_versions
+      where status='draft' order by version_number
+    `);
+    assert.deepEqual(stored.rows.map((row) => row.version_number), Array.from({ length: 12 }, (_, index) => index + 2));
+    assert.ok(stored.rows.every((row) => row.parent_version_id === active.id));
+    assert.equal(stored.rows.filter((row) => row.source === 'manual').length, 6);
+    assert.equal(stored.rows.filter((row) => row.source === 'llm').length, 6);
   });
 });
