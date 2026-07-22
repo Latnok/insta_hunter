@@ -1,13 +1,14 @@
 # Production status
 
-Last verified: 2026-07-21.
+Last verified: 2026-07-22.
 
 ## Deployment
 
 - Public URL: `https://insta.podedu.ru`
 - Server directory: `/opt/instagram-hunter`
 - Compose project: `insta_hunter`
-- Application image: `instagram-hunter:0.1.8`
+- Application image: `instagram-hunter:0.1.9`
+- Active database: `instagram_hunter_v1`, complete schema version `1`.
 - Web binding: `127.0.0.1:13002`; public traffic terminates at the system Nginx.
 - TLS certificate is managed by Certbot and is valid through 2026-10-19.
 - PostgreSQL is reachable only inside the Compose network.
@@ -51,7 +52,19 @@ No real candidate recommendation was produced from the sampled account because i
 8. Bind successful LLM results, evaluations and criteria drafts to their originating job so a worker restart reuses the committed result.
 9. Deduplicate discovery sources and classify jobs, and explicitly serialize JavaScript arrays stored in JSONB columns.
 
-The Git first-release baseline contains one complete `db/schema.sql` and no migration chain. The bootstrap only initializes an empty database or validates that the required tables already exist. Production's historical migration records remain untouched.
+The Git first-release baseline contains one complete `db/schema.sql` and no migration chain. Release `0.1.9` moved production through the approved blue/green DBA process to a new database initialized from that complete schema. Bootstrap and readiness now require all schema tables plus exact `schema_metadata.schema_version` compatibility.
+
+## Deployment 0.1.9
+
+- Source release: commit `4f4aff6`; GitHub Actions for the schema-contract commit passed before rollout.
+- A pre-cutover backup and a final backup after stopping web/worker were created successfully.
+- Data was transferred from the historical database without `schema_migrations`; all 15 shared tables had exact source/target row counts after writers stopped.
+- Rehearsal web and production web returned `200` from `/health/ready`; public `/login` returned `200` over HTTPS.
+- The first full backup of `instagram_hunter_v1` was restored into an isolated temporary database and verified at schema version `1` with four accounts.
+- `BACKUP_DATABASE=instagram_hunter_v1` makes the backup service follow the active blue/green database instead of the original PostgreSQL database name.
+- The old database, pre-cutover `.env` and image `0.1.8` are retained for the rollback window. Temporary transfer archives, rehearsal dumps and the historical stopped migrate container were removed.
+- After rollout, web and worker are healthy; `checkit` remains healthy and `million-items-postgres` remains stopped.
+- Root filesystem usage is approximately 95%, with about 2.1 GB free. Avoid server-side image builds and perform a separately approved Docker storage cleanup before the next large release.
 
 ## Next operational action
 

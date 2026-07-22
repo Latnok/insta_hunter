@@ -178,7 +178,7 @@ Nginx vhost: `/etc/nginx/sites-available/insta.podedu.ru.conf`, symlink в `site
 
 ### Ограничения сервера
 
-- Root filesystem был заполнен на 93%, свободно около 2.9 ГБ.
+- После rollout `0.1.9` root filesystem заполнен примерно на 95%, свободно около 2.1 ГБ.
 - Swap отсутствует.
 - Production image следует собирать и тестировать вне VPS, затем загружать готовым.
 - Нельзя выполнять тяжёлый `docker build` или параллельный import при малом `available memory`.
