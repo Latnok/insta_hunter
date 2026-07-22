@@ -12,6 +12,7 @@ import { csrfToken, verifyCsrf } from './middleware/csrf.js';
 import { i18nMiddleware } from './i18n/index.js';
 import { createPageRouter } from './routes/pages.js';
 import { createActionRouter } from './routes/actions.js';
+import { getSchemaStatus } from './db/schema.js';
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -43,9 +44,8 @@ export function createApp({ config, pool, logger }) {
   app.get('/health/live', (_req, res) => res.json({ status: 'ok' }));
   app.get('/health/ready', async (_req, res) => {
     try {
-      await pool.query('select 1');
-      const schema = await pool.query("select to_regclass('public.instagram_accounts') is not null as ready");
-      if (!schema.rows[0].ready) return res.status(503).json({ status: 'unready' });
+      const schema = await getSchemaStatus(pool);
+      if (!schema.compatible) return res.status(503).json({ status: 'unready' });
       res.json({ status: 'ready' });
     } catch {
       res.status(503).json({ status: 'unready' });

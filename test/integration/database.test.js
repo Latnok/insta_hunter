@@ -3,7 +3,11 @@ import crypto from 'node:crypto';
 import { after, before, beforeEach, describe, test } from 'node:test';
 import pg from 'pg';
 
-import { initializeSchema } from '../../src/db/schema.js';
+import {
+  currentSchemaVersion,
+  getSchemaStatus,
+  initializeSchema
+} from '../../src/db/schema.js';
 import { withTransaction } from '../../src/db/pool.js';
 import { upsertAccount } from '../../src/db/repositories/accounts.js';
 import { completeJob, enqueueJob, reserveJob } from '../../src/db/repositories/jobs.js';
@@ -57,6 +61,38 @@ integration('PostgreSQL repositories, constraints and lifecycle transitions', ()
   async function expectPgError(query, code) {
     await assert.rejects(query, (error) => error?.code === code);
   }
+
+  test('schema compatibility is explicit, versioned and read-only', async () => {
+    const compatible = await getSchemaStatus(pool);
+    assert.deepEqual(compatible, {
+      state: 'compatible', compatible: true,
+      expectedVersion: currentSchemaVersion,
+      actualVersion: currentSchemaVersion,
+      missingTables: []
+    });
+
+    await pool.query('update schema_metadata set schema_version = 999 where singleton = true');
+    try {
+      const incompatible = await getSchemaStatus(pool);
+      assert.equal(incompatible.state, 'incompatible');
+      assert.equal(incompatible.compatible, false);
+      assert.equal(incompatible.actualVersion, 999);
+      assert.equal(incompatible.expectedVersion, currentSchemaVersion);
+      await assert.rejects(
+        initializeSchema(pool),
+        /incompatible schema.*refusing to modify it/
+      );
+      const unchanged = await pool.query(
+        'select schema_version from schema_metadata where singleton = true'
+      );
+      assert.equal(unchanged.rows[0].schema_version, 999);
+    } finally {
+      await pool.query(
+        'update schema_metadata set schema_version = $1 where singleton = true',
+        [currentSchemaVersion]
+      );
+    }
+  });
 
   test('account upsert is idempotent, preserves lifecycle and records every source', async () => {
     const first = await upsertAccount(pool, {

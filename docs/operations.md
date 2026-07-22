@@ -22,13 +22,13 @@ Production stack:
 2. Сгенерировать bcrypt-хэш пароля предоставленной CLI-командой проекта.
 3. Указать домен и настроить DNS на VPS.
 4. Запустить PostgreSQL.
-5. Выполнить SQL-миграции отдельной one-shot командой.
+5. Применить `db/schema.sql` one-shot командой `npm run db:init` только к пустой БД.
 6. Выполнить seed начальной criteria version.
 7. Запустить web, worker, backup и Caddy.
 8. Проверить readiness и login.
 9. Выполнить тестовый импорт одного URL с малыми лимитами.
 
-Миграции не должны автоматически выполняться одновременно несколькими web/worker replicas. Production deploy запускает их отдельным шагом.
+Проект не применяет цепочку runtime-миграций. Bootstrap полной схемы запускается отдельно от web/worker, а непустую БД никогда не модифицирует. Изменения production-схемы выполняются по [отдельному DBA-процессу](database-rollout.md).
 
 ## 3. Health checks
 
@@ -76,7 +76,7 @@ docker compose run --rm --entrypoint sh backup /usr/local/bin/backup-once.sh
 
 1. Создать отдельную пустую PostgreSQL-БД.
 2. Восстановить последний dump через `pg_restore`.
-3. Запустить проверку наличия корневой таблицы схемы.
+3. Запустить read-only проверку `npm run db:check`.
 4. Сверить counts accounts/reels/jobs/audit/criteria.
 5. Выполнить login и read-only smoke test на восстановленной БД.
 
@@ -87,7 +87,7 @@ Restore drill выполняется перед первым production запу
 - Image собирается один раз и используется web/worker.
 - До переключения версии выполняются автоматические тесты и развёртывание полной схемы на временной пустой БД.
 - Deploy sequence: backup → pull/build image → schema check/bootstrap → seed → restart worker/web → readiness checks.
-- Bootstrap никогда не меняет непустую БД. Любое будущее изменение production-схемы требует отдельного проверенного DBA-плана и свежего backup.
+- Bootstrap никогда не меняет непустую БД. Любое изменение production-схемы выполняется только по утверждённому [DBA-процессу upgrade/rollback](database-rollout.md) с новой БД, rehearsal и свежим проверенным backup.
 - При провале readiness новая версия останавливается; откат приложения не должен требовать изменения данных.
 
 ## 7. Caddy и сеть
@@ -117,7 +117,7 @@ Restore drill выполняется перед первым production запу
 
 Нужно документировать и проверить команды для:
 
-- запуска миграций и просмотра их статуса;
+- bootstrap полной схемы пустой БД и read-only `npm run db:check`;
 - генерации bcrypt-хэша;
 - retry recovery зависших jobs;
 - принудительного освобождения только просроченных leases;

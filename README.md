@@ -10,6 +10,7 @@
 - [Архитектура и SQL-модель](docs/architecture.md)
 - [Pipeline и правила обработки](docs/pipeline.md)
 - [Эксплуатация и развёртывание](docs/operations.md)
+- [DBA-процесс изменения схемы и rollback](docs/database-rollout.md)
 - [Текущее состояние production](docs/production-status.md)
 - [Подробный план работ](TODO.md)
 
@@ -38,6 +39,8 @@
    npm run db:init
    npm run seed
    ```
+
+   `db:init` применяет полную схему только к пустой БД. Совместимость непустой БД проверяется read-only командой `npm run db:check`; изменение production-схемы выполняется только по отдельному [DBA-процессу](docs/database-rollout.md).
 
 5. Запустить web и worker в двух терминалах:
 
@@ -92,7 +95,7 @@ docker compose -p insta_hunter -f compose.yaml -f compose.server.yaml \
   up -d --no-build postgres schema seed web worker backup
 ```
 
-Инструкции по backup/restore, HTTPS и безопасному обновлению находятся в [эксплуатационной документации](docs/operations.md).
+Инструкции по backup/restore, HTTPS и безопасному обновлению находятся в [эксплуатационной документации](docs/operations.md). Изменение непустой production-БД регулирует отдельный [DBA-процесс upgrade/rollback](docs/database-rollout.md).
 
 ## Проверка
 

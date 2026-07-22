@@ -33,7 +33,7 @@ Acceptance gate:
 
 - [x] Web стартует локально, отдаёт bilingual shell и responsive navigation без БД-запросов на liveness.
 
-## Phase 2 — PostgreSQL, миграции и repositories
+## Phase 2 — PostgreSQL, полная схема и repositories
 
 - [x] Реализовать connection pool, transaction helper и graceful pool shutdown.
 - [x] Реализовать безопасный bootstrap полной схемы с advisory lock и отказом от изменения непустой БД.
@@ -427,7 +427,7 @@ Definition of Done:
 - [x] Reuse persisted evaluation and criteria-proposal results after worker restart without another LLM call.
 - [x] Fix JSONB serialization for LLM messages, signal arrays and search-query arrays.
 - [x] Pass 17/17 PostgreSQL integration/security/queue/idempotency tests and the default 19-test suite.
-- [x] Prepare production image `instagram-hunter:0.1.8` and migration rollout.
+- [x] Prepare production image `instagram-hunter:0.1.8` and schema rollout.
 - [x] Add sanitized SocialCrawl and ScrapeCreators success/error/schema-change fixtures.
 - [x] Cover network, 404, 408, 429, 5xx, invalid JSON, empty result and non-retryable 400 branches without live API.
 - [x] Prove discovery creates candidate/source rows without enrichment jobs.
@@ -470,7 +470,7 @@ Definition of Done:
 - [x] При успешном retry очищать stale error state не только у `jobs`, но и у `discovery_runs`/`pipeline_runs`: manual retry атомарно переоткрывает связанный run, а переходы в `running`/`succeeded` очищают `error_summary` и несовместимый `finished_at`; regression-тесты покрывают оба типа run.
 - [x] Валидировать и ограничивать `offset`, `status`, `quality` и `jobType` query-параметры: endpoint-specific allowlists, одиночные значения, `offset` 0–10000 и `search` до 100 символов проверяются до SQL; некорректный ввод возвращает 400, очередь показывает select допустимых job types.
 - [x] Сериализовать выделение `criteria_versions.version_number`: manual/LLM drafts используют общий transactional service и advisory lock, общий также с activation; 12 конкурентных транзакций получают последовательные версии без unique violation.
-- [ ] До первого изменения production-схемы утвердить отдельный DBA-процесс upgrade/rollback; bootstrap полной схемы намеренно не модифицирует непустую БД.
+- [x] Утвердить отдельный DBA-процесс upgrade/rollback до изменения production-схемы: versioned schema contract проверяется через `db:check` и readiness, bootstrap fail-closed и не модифицирует непустую БД, а schema-changing release использует rehearsal, новую БД, проверенный перенос, атомарное переключение и заранее согласованный rollback.
 - [x] Вынести PostgreSQL suites в обязательную CI-команду: GitHub Actions на push в `master` и pull request поднимает PostgreSQL 16, передаёт обязательный `TEST_DATABASE_URL`, отдельно запускает syntax/default/integration suites и production dependency audit с read-only repository permissions.
 - [x] Добавить regression-тесты для running-job cancellation race и cancel→pipeline terminal state. Lease fencing, stale-job max attempts, liveness, безопасные 5xx и SSRF/media size limits также покрыты.
 

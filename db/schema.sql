@@ -1,4 +1,11 @@
 -- Complete first-release schema. This file is applied only to an empty database.
+create table schema_metadata (
+  singleton boolean primary key default true check (singleton),
+  schema_version integer not null check (schema_version > 0),
+  installed_at timestamptz not null default now()
+);
+insert into schema_metadata(singleton, schema_version) values (true, 1);
+
 create table instagram_accounts (
   id bigint generated always as identity primary key,
   username text not null unique,
