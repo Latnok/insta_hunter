@@ -84,18 +84,6 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 - при утечке немедленно отзывайте ключ у провайдера и создавайте новый;
 - на Linux ограничьте доступ к production-файлу командой `chmod 600 .env`.
 
-## Production
-
-Текущий production развёрнут на `https://insta.podedu.ru` в `/opt/instagram-hunter`.
-На общем сервере используется системный Nginx, поэтому Caddy из базового Compose не запускается. Web опубликован только на `127.0.0.1:13002` через `compose.server.yaml`, PostgreSQL остаётся во внутренней сети Compose.
-
-```bash
-cd /opt/instagram-hunter
-docker compose -p insta_hunter -f compose.yaml -f compose.server.yaml \
-  up -d --no-build postgres schema seed web worker backup
-```
-
-Инструкции по backup/restore, HTTPS и безопасному обновлению находятся в [эксплуатационной документации](docs/operations.md). Изменение непустой production-БД регулирует отдельный [DBA-процесс upgrade/rollback](docs/database-rollout.md).
 
 ## Проверка
 
