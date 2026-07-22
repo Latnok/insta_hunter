@@ -233,7 +233,10 @@ integration('job handler idempotency after worker restart', () => {
   });
 
   test('repeated evaluation reuses the persisted result without another LLM call', async () => {
-    const { account } = await accountWithContent();
+    const { account, criteria } = await accountWithContent();
+    await pool.query(`update criteria_versions set transcript_rules=$2 where id=$1`, [criteria.id, {
+      llmPrompts: { candidateEvaluation: 'CUSTOM ANALYSIS PROMPT', outreachProposal: 'unused outreach' }
+    }]);
     const job = await insertJob('evaluate_candidate', account.id);
     let calls = 0;
     const parsed = {
@@ -241,8 +244,9 @@ integration('job handler idempotency after worker restart', () => {
       positive_signals: ['useful'], negative_signals: [], explanation: 'fixture'
     };
     const llm = {
-      evaluate: async () => {
+      evaluate: async (messages) => {
         calls += 1;
+        assert.match(messages[0].content, /^CUSTOM ANALYSIS PROMPT/);
         return {
           parsed, rawResponse: { fixture: true }, usage: {}, meta: { durationMs: 1 }
         };
@@ -260,7 +264,10 @@ integration('job handler idempotency after worker restart', () => {
   });
 
   test('repeated criteria proposal reuses one draft without another LLM call', async () => {
-    await accountWithContent('approved');
+    const { criteria } = await accountWithContent('approved');
+    await pool.query(`update criteria_versions set transcript_rules=$2 where id=$1`, [criteria.id, {
+      llmPrompts: { candidateEvaluation: 'preserved analysis', outreachProposal: 'preserved outreach' }
+    }]);
     const job = await insertJob('propose_criteria');
     let calls = 0;
     const llm = {
@@ -288,10 +295,16 @@ integration('job handler idempotency after worker restart', () => {
     assert.equal(logs.rows[0].count, 1);
     const stored = await pool.query('select transcript_rules from criteria_versions where source_job_id=$1', [job.id]);
     assert.deepEqual(stored.rows[0].transcript_rules.noisePatterns, ['dimatorzok']);
+    assert.deepEqual(stored.rows[0].transcript_rules.llmPrompts, {
+      candidateEvaluation: 'preserved analysis', outreachProposal: 'preserved outreach'
+    });
   });
 
   test('repeated outreach job stores one approval draft without another LLM call', async () => {
     const { account, criteria } = await accountWithContent('approved');
+    await pool.query(`update criteria_versions set transcript_rules=$2 where id=$1`, [criteria.id, {
+      llmPrompts: { candidateEvaluation: 'unused analysis', outreachProposal: 'CUSTOM OUTREACH PROMPT' }
+    }]);
     const evaluationLog = await pool.query(`
       insert into llm_logs(purpose,account_id,criteria_version_id,base_url,model,request_messages,status)
       values ('candidate_evaluation',$1,$2,'https://example.invalid','test-model','[]','succeeded') returning id
@@ -307,8 +320,9 @@ integration('job handler idempotency after worker restart', () => {
       personalization_reason: 'Автор регулярно показывает образы с одеждой и подходит по активным критериям.'
     };
     const llm = {
-      draftOutreach: async () => {
+      draftOutreach: async (messages) => {
         calls += 1;
+        assert.match(messages[0].content, /^CUSTOM OUTREACH PROMPT/);
         return { parsed, rawResponse: { fixture: true }, usage: {}, meta: { durationMs: 1 } };
       }
     };
@@ -320,6 +334,8 @@ integration('job handler idempotency after worker restart', () => {
     const proposals = await pool.query('select * from outreach_proposals where job_id=$1', [job.id]);
     assert.equal(proposals.rowCount, 1);
     assert.equal(proposals.rows[0].status, 'draft');
+    const promptLog = await pool.query('select criteria_version_id from llm_logs where job_id=$1 and purpose=$2', [job.id, 'outreach_proposal']);
+    assert.equal(String(promptLog.rows[0].criteria_version_id), String(criteria.id));
   });
 
   test('lifecycle change during a provider call blocks state writes and downstream jobs', async () => {

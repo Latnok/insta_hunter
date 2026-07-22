@@ -80,6 +80,34 @@
   gap: 12px;
 }
 
+.prompt-editor {
+  margin-bottom: 18px;
+}
+
+.prompt-editor h2,
+.prompt-editor p {
+  margin: 0;
+}
+
+.prompt-editor textarea {
+  min-height: 190px;
+  line-height: 1.5;
+}
+
+.prompt-version {
+  margin-top: 10px;
+}
+
+.prompt-version h3 {
+  margin: 12px 0 6px;
+}
+
+.prompt-version pre {
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
 .outreach-section h3,
 .outreach-section p {
   margin: 0;

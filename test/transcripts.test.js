@@ -25,3 +25,14 @@ test('normalizes Python-style case-insensitive flags returned by an LLM', () => 
   assert.deepEqual(normalized.lowValuePatterns, ['^noise$']);
   assert.doesNotThrow(() => validateTranscriptRules(normalized));
 });
+
+test('validates embedded LLM prompts when criteria are activated', () => {
+  assert.doesNotThrow(() => validateTranscriptRules({
+    ...DEFAULT_TRANSCRIPT_RULES,
+    llmPrompts: { candidateEvaluation: 'analysis', outreachProposal: 'outreach' }
+  }));
+  assert.throws(() => validateTranscriptRules({
+    ...DEFAULT_TRANSCRIPT_RULES,
+    llmPrompts: { candidateEvaluation: '', outreachProposal: 'outreach' }
+  }));
+});

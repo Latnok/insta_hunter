@@ -75,3 +75,28 @@ test('LLM query suggestion polls safely and exposes generated choices', async ()
   assert.match(completed, /Запрос готов/);
   assert.doesNotMatch(completed, /hx-trigger="every 2s"/);
 });
+
+test('settings exposes both active LLM prompts as editable draft fields', async () => {
+  const now = new Date();
+  const html = await ejs.renderFile(path.join(views, 'settings.ejs'), {
+    title: 'Settings', locale: 'ru', csrfToken: 'csrf-token', active: 'settings',
+    t: (key) => key,
+    criteria: [{
+      id: 1, version_number: 7, status: 'active', source: 'manual', created_at: now,
+      checklist_markdown: 'criteria', transcript_rules: {
+        llmPrompts: { candidateEvaluation: 'ANALYSIS PROMPT', outreachProposal: 'OUTREACH PROMPT' }
+      }
+    }],
+    llmLogs: [],
+    llmPrompts: { candidateEvaluation: 'ANALYSIS PROMPT', outreachProposal: 'OUTREACH PROMPT' }
+  });
+  assert.match(html, /Промпты LLM/);
+  assert.match(html, /name="candidateEvaluation"/);
+  assert.match(html, /ANALYSIS PROMPT/);
+  assert.match(html, /name="outreachProposal"/);
+  assert.match(html, /OUTREACH PROMPT/);
+  assert.match(html, /Сохранить как draft/);
+  assert.match(html, /нажмите Activate/);
+  assert.match(html, /активной версии v7/);
+  assert.match(html, /Промпты этой версии/);
+});

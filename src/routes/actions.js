@@ -11,6 +11,7 @@ import { enqueueJob } from '../db/repositories/jobs.js';
 import { cancelJob, retryJob } from '../services/jobs.js';
 import { createCriteriaDraft, criteriaWriteLockKey } from '../services/criteria.js';
 import { decideOutreachDraft, regenerateOutreachDraft, saveOutreachDraft } from '../services/outreach.js';
+import { validateLlmPrompts, withLlmPrompts } from '../domain/llm-prompts.js';
 
 function back(res, fallback = '/candidates') {
   res.set('HX-Redirect', fallback);
@@ -176,6 +177,32 @@ export function createActionRouter({ pool, config }) {
 
   router.post('/criteria/proposals', async (_req, res) => {
     await enqueueCriteriaProposal(pool, config);
+    return back(res, '/settings');
+  });
+
+  router.post('/prompts/drafts', async (req, res) => {
+    let prompts;
+    try {
+      prompts = validateLlmPrompts({
+        candidateEvaluation: req.body.candidateEvaluation,
+        outreachProposal: req.body.outreachProposal
+      });
+    } catch (error) {
+      throw Object.assign(new Error(`Invalid LLM prompts: ${error.message}`), { statusCode: 400 });
+    }
+    await withTransaction(pool, async (client) => {
+      await client.query('select pg_advisory_xact_lock($1)', [criteriaWriteLockKey]);
+      const active = (await client.query(`select * from criteria_versions where status='active' limit 1`)).rows[0];
+      if (!active) throw Object.assign(new Error('Active criteria not found'), { statusCode: 409 });
+      await createCriteriaDraft(client, {
+        checklistMarkdown: active.checklist_markdown,
+        searchQueries: active.search_queries,
+        transcriptRules: withLlmPrompts(active.transcript_rules, prompts),
+        source: 'manual',
+        parentVersionId: active.id,
+        diffSummary: 'LLM prompts updated'
+      });
+    });
     return back(res, '/settings');
   });
 

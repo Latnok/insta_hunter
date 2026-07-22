@@ -177,6 +177,54 @@ integration('authentication and request security', () => {
     if (insertedCriteria.rowCount) await pool.query('delete from criteria_versions where id=$1', [insertedCriteria.rows[0].id]);
   });
 
+  test('LLM prompt edits require CSRF and create an inactive criteria draft', async () => {
+    const insertedCriteria = await pool.query(`
+      insert into criteria_versions(version_number,checklist_markdown,search_queries,transcript_rules,status,source)
+      select coalesce(max(version_number),0)+1,'prompt integration criteria','["fashion"]','{}','active','manual'
+      from criteria_versions
+      where not exists(select 1 from criteria_versions where status='active')
+      returning id
+    `);
+    const active = (await pool.query(`select * from criteria_versions where status='active' limit 1`)).rows[0];
+    const app = createApp({ config: config(), pool, logger });
+    const agent = request.agent(app);
+    const loginPage = await agent.get('/login').expect(200);
+    await agent.post('/auth/login').type('form').send({
+      _csrf: csrfFrom(loginPage), username: 'admin', password
+    }).expect(302);
+    const settings = await agent.get('/settings').expect(200);
+    const csrf = csrfFrom(settings);
+
+    await agent.post('/prompts/drafts').type('form').send({
+      candidateEvaluation: 'custom analysis', outreachProposal: 'custom outreach'
+    }).expect(403);
+
+    await agent.post('/prompts/drafts').type('form').send({
+      _csrf: csrf,
+      candidateEvaluation: '  custom analysis  ',
+      outreachProposal: 'custom outreach'
+    }).expect(303).expect('Location', '/settings');
+
+    const draft = (await pool.query(`
+      select * from criteria_versions
+      where parent_version_id=$1 and diff_summary='LLM prompts updated'
+      order by version_number desc limit 1
+    `, [active.id])).rows[0];
+    assert.ok(draft);
+    assert.equal(draft.status, 'draft');
+    assert.deepEqual(draft.transcript_rules.llmPrompts, {
+      candidateEvaluation: 'custom analysis', outreachProposal: 'custom outreach'
+    });
+    assert.equal((await pool.query(`select status from criteria_versions where id=$1`, [active.id])).rows[0].status, 'active');
+
+    await agent.post('/prompts/drafts').type('form').send({
+      _csrf: csrf, candidateEvaluation: ' ', outreachProposal: 'custom outreach'
+    }).expect(400);
+
+    await pool.query('delete from criteria_versions where id=$1', [draft.id]);
+    if (insertedCriteria.rowCount) await pool.query('delete from criteria_versions where id=$1', [insertedCriteria.rows[0].id]);
+  });
+
   test('login is throttled by IP address', async () => {
     const app = createApp({ config: config(), pool, logger });
     const initial = await request(app).get('/login').expect(200);

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { getAccount, listAccountReels, listAccounts, listReels } from '../db/repositories/accounts.js';
 import { listJobs } from '../db/repositories/jobs.js';
 import { jobStatuses, jobTypes, parseListQuery, transcriptQualities } from '../domain/query.js';
+import { resolveLlmPrompts } from '../domain/llm-prompts.js';
 
 const pageSize = 24;
 
@@ -46,7 +47,9 @@ export function createPageRouter({ pool, config }) {
   router.get('/settings', async (req, res) => {
     const result = await pool.query('select * from criteria_versions order by version_number desc');
     const logs = await pool.query('select * from llm_logs order by created_at desc limit 30');
-    res.render('settings', { title: req.t('settings'), active: 'settings', criteria: result.rows, llmLogs: logs.rows });
+    const activeCriteria = result.rows.find((item) => item.status === 'active');
+    const llmPrompts = resolveLlmPrompts(activeCriteria?.transcript_rules);
+    res.render('settings', { title: req.t('settings'), active: 'settings', criteria: result.rows, llmLogs: logs.rows, llmPrompts });
   });
 
   router.get('/ui/discovery-query-suggestions/:jobId', async (req, res) => {

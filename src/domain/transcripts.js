@@ -1,3 +1,5 @@
+import { validateLlmPrompts } from './llm-prompts.js';
+
 const DEFAULT_NOISE_PATTERNS = [
   'dimatorzok',
   'субтитры сделал',
@@ -38,6 +40,7 @@ export function validateTranscriptRules(rules = DEFAULT_TRANSCRIPT_RULES) {
   }
   if (!Number.isInteger(rules.minCharacters) || rules.minCharacters < 1) throw new Error('Invalid minCharacters');
   if (!Number.isInteger(rules.minWords) || rules.minWords < 1) throw new Error('Invalid minWords');
+  if (rules.llmPrompts !== undefined) validateLlmPrompts(rules.llmPrompts);
   return rules;
 }
 
