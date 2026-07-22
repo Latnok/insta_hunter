@@ -47,6 +47,17 @@ export function isPublicIp(address) {
   return false;
 }
 
+export function createPinnedLookup(pinned) {
+  return (_hostname, options, callback) => {
+    if (typeof options === 'function') {
+      callback = options;
+      options = {};
+    }
+    if (options?.all) callback(null, [pinned]);
+    else callback(null, pinned.address, pinned.family);
+  };
+}
+
 export async function resolveSafeMediaUrl(rawUrl, lookupFn = dns.lookup, signal) {
   let url;
   try {
@@ -86,7 +97,7 @@ async function requestToFile(resolved, outputPath, { maxBytes, timeoutMs, signal
       method: 'GET',
       headers: { accept: 'video/*,audio/*,application/octet-stream' },
       servername: url.protocol === 'https:' ? url.hostname.replace(/^\[|\]$/g, '') : undefined,
-      lookup: (_hostname, _options, callback) => callback(null, pinned.address, pinned.family),
+      lookup: createPinnedLookup(pinned),
       signal
     }, async (response) => {
       const status = response.statusCode || 0;

@@ -10,6 +10,7 @@ import test from 'node:test';
 import { runFfmpeg, transcribeWithGroq } from '../src/providers/groq.js';
 import {
   createByteLimitStream,
+  createPinnedLookup,
   isPublicIp,
   resolveSafeMediaUrl
 } from '../src/providers/media-download.js';
@@ -130,6 +131,26 @@ test('DNS results are all validated before a media connection is allowed', async
   assert.equal(resolved.addresses[0].address, '93.184.216.34');
   assert.equal(isPublicIp('93.184.216.34'), true);
   assert.equal(isPublicIp('192.168.1.1'), false);
+});
+
+test('pinned DNS lookup supports Node single-address and all-address callback modes', () => {
+  const pinned = { address: '203.0.113.8', family: 4 };
+  const lookup = createPinnedLookup(pinned);
+
+  lookup('cdn.example', {}, (error, address, family) => {
+    assert.equal(error, null);
+    assert.equal(address, pinned.address);
+    assert.equal(family, pinned.family);
+  });
+  lookup('cdn.example', { all: true }, (error, addresses) => {
+    assert.equal(error, null);
+    assert.deepEqual(addresses, [pinned]);
+  });
+  lookup('cdn.example', (error, address, family) => {
+    assert.equal(error, null);
+    assert.equal(address, pinned.address);
+    assert.equal(family, pinned.family);
+  });
 });
 
 test('shutdown abort interrupts DNS resolution before media download', async () => {

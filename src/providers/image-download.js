@@ -1,7 +1,7 @@
 import http from 'node:http';
 import https from 'node:https';
 import { signalWithTimeout } from '../lib/abort.js';
-import { resolveSafeMediaUrl } from './media-download.js';
+import { createPinnedLookup, resolveSafeMediaUrl } from './media-download.js';
 
 export const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const allowedContentType = /^image\/(?:avif|gif|jpeg|png|webp)(?:\s*;|$)/i;
@@ -25,7 +25,7 @@ function requestImage(resolved, { maxBytes, timeoutMs, signal: externalSignal })
         'user-agent': 'Mozilla/5.0 (compatible; InstagramHunter/0.2)'
       },
       servername: url.protocol === 'https:' ? url.hostname.replace(/^\[|\]$/g, '') : undefined,
-      lookup: (_hostname, _options, callback) => callback(null, pinned.address, pinned.family),
+      lookup: createPinnedLookup(pinned),
       signal
     }, (response) => {
       const status = response.statusCode || 0;
