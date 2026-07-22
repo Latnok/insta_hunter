@@ -36,7 +36,7 @@ async function handleDiscovery(context, job) {
   const { query, limit } = job.payload;
   await pool.query(`update discovery_runs set status='running', started_at=coalesce(started_at,now()) where id=$1`, [job.discovery_run_id]);
   try {
-    const result = await instagram.search(query, limit);
+    const result = await instagram.search(query, limit, { signal: context.signal });
     await logProvider(pool, { provider: result.provider, operation: 'search', job, meta: result.requestMeta, outcome: 'succeeded' });
     const counts = { found: result.items.length, created: 0, existing: 0, invalid: 0 };
     await withTransaction(pool, async (client) => {
@@ -70,7 +70,7 @@ async function handleProfile(context, job) {
   if (!account) throw new Error('Account not found');
   if (!job.payload.forceRefresh && account.fetched_at && !isStale(account.fetched_at, config.freshnessMs)) return { cached: true };
   try {
-    const result = await instagram.profile(account.username);
+    const result = await instagram.profile(account.username, { signal: context.signal });
     await logProvider(pool, { provider: result.provider, operation: 'profile', job, meta: result.requestMeta, outcome: 'succeeded' });
     const p = result.profile;
     await withTransaction(pool, async (client) => {
@@ -125,7 +125,7 @@ async function handleReels(context, job) {
     if (latest.rows[0].fetched_at && !isStale(latest.rows[0].fetched_at, config.freshnessMs)) return { cached: true };
   }
   try {
-    const result = await instagram.reels(account.username, job.payload.reelsLimit);
+    const result = await instagram.reels(account.username, job.payload.reelsLimit, { signal: context.signal });
     await logProvider(pool, { provider: result.provider, operation: 'reels', job, meta: result.requestMeta, outcome: 'succeeded' });
     const saved = await withTransaction(pool, async (client) => {
       await assertActivePipeline(client, job);
@@ -156,14 +156,14 @@ async function handleTranscript(context, job) {
   if (!reel) throw new Error('Reel not found');
   let result;
   try {
-    result = await instagram.transcript(reel.reel_url);
+    result = await instagram.transcript(reel.reel_url, { signal: context.signal });
     await logProvider(pool, { provider: result.provider, operation: 'transcript', job, meta: result.requestMeta, outcome: 'succeeded' });
   } catch (providerError) {
     if (!reel.media_url) {
       await logProvider(pool, { provider: 'instagram-fallback', operation: 'transcript', job, outcome: 'failed', error: providerError });
       throw new Error(`Transcript providers failed and reel has no media URL: ${providerError.message}`);
     }
-    result = await transcribeWithGroq(config, reel.media_url);
+    result = await transcribeWithGroq(config, reel.media_url, { signal: context.signal });
     result.provider = 'groq-whisper';
     await logProvider(pool, { provider: result.provider, operation: 'transcript', job, meta: result.requestMeta, outcome: 'succeeded' });
   }
@@ -226,7 +226,7 @@ async function handleEvaluation(context, job) {
   ];
   const started = Date.now();
   try {
-    const result = await llm.evaluate(messages);
+    const result = await llm.evaluate(messages, { signal: context.signal });
     await withTransaction(pool, async (client) => {
       await assertActivePipeline(client, job);
       const log = await client.query(`
@@ -266,7 +266,7 @@ async function handleCriteriaProposal(context, job) {
   ];
   const started = Date.now();
   try {
-    const result = await llm.proposeCriteria(messages);
+    const result = await llm.proposeCriteria(messages, { signal: context.signal });
     validateTranscriptRules(result.parsed.transcript_rules);
     await withTransaction(pool, async (client) => {
       const log = await client.query(`

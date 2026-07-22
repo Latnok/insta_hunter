@@ -84,10 +84,10 @@ function createSocialCrawl(config) {
   const headers = { 'x-api-key': config.SOCIALCRAWL_API_KEY };
   return {
     name: 'socialcrawl', enabled: Boolean(config.SOCIALCRAWL_API_KEY),
-    async search(query, limit) { const r = await requestJson(`${base}/search/profiles`, { headers, query: { query, limit } }); return { items: normalizeSearch('socialcrawl', r.data), ...r }; },
-    async profile(username) { const r = await requestJson(`${base}/profile`, { headers, query: { handle: username } }); return normalizeProfile('socialcrawl', username, r.data, r.meta); },
-    async reels(username, limit) { const r = await requestJson(`${base}/profile/reels`, { headers, query: { handle: username, limit } }); return { items: unwrapItems(r.data).map((x) => normalizeReel('socialcrawl', username, x)).filter(Boolean), rawPayload: r.data, requestMeta: r.meta, provider: 'socialcrawl' }; },
-    async transcript(reelUrl) { const r = await requestJson(`${base}/media/transcript`, { headers, query: { url: reelUrl } }); return normalizeTranscript('socialcrawl', r.data, r.meta); }
+    async search(query, limit, options = {}) { const r = await requestJson(`${base}/search/profiles`, { headers, query: { query, limit }, signal: options.signal }); return { items: normalizeSearch('socialcrawl', r.data), ...r }; },
+    async profile(username, options = {}) { const r = await requestJson(`${base}/profile`, { headers, query: { handle: username }, signal: options.signal }); return normalizeProfile('socialcrawl', username, r.data, r.meta); },
+    async reels(username, limit, options = {}) { const r = await requestJson(`${base}/profile/reels`, { headers, query: { handle: username, limit }, signal: options.signal }); return { items: unwrapItems(r.data).map((x) => normalizeReel('socialcrawl', username, x)).filter(Boolean), rawPayload: r.data, requestMeta: r.meta, provider: 'socialcrawl' }; },
+    async transcript(reelUrl, options = {}) { const r = await requestJson(`${base}/media/transcript`, { headers, query: { url: reelUrl }, signal: options.signal }); return normalizeTranscript('socialcrawl', r.data, r.meta); }
   };
 }
 
@@ -96,10 +96,10 @@ function createScrapeCreators(config) {
   const headers = { 'x-api-key': config.SCRAPECREATORS_API_KEY };
   return {
     name: 'scrapecreators', enabled: Boolean(config.SCRAPECREATORS_API_KEY),
-    async search(query, limit) { const r = await requestJson(`${base}/search/profiles`, { headers, query: { query } }); return { items: normalizeSearch('scrapecreators', r.data).slice(0, limit), rawPayload: r.data, requestMeta: r.meta, provider: 'scrapecreators' }; },
-    async profile(username) { const r = await requestJson(`${base}/profile`, { headers, query: { handle: username } }); return normalizeProfile('scrapecreators', username, r.data, r.meta); },
-    async reels(username, limit) { const r = await requestJson(`${base}/user/reels`, { headers, query: { handle: username } }); return { items: unwrapItems(r.data).slice(0, limit).map((x) => normalizeReel('scrapecreators', username, x)).filter(Boolean), rawPayload: r.data, requestMeta: r.meta, provider: 'scrapecreators' }; },
-    async transcript(reelUrl) { const r = await requestJson(`${base}/post/transcript`, { headers, query: { url: reelUrl } }); return normalizeTranscript('scrapecreators', r.data, r.meta); }
+    async search(query, limit, options = {}) { const r = await requestJson(`${base}/search/profiles`, { headers, query: { query }, signal: options.signal }); return { items: normalizeSearch('scrapecreators', r.data).slice(0, limit), rawPayload: r.data, requestMeta: r.meta, provider: 'scrapecreators' }; },
+    async profile(username, options = {}) { const r = await requestJson(`${base}/profile`, { headers, query: { handle: username }, signal: options.signal }); return normalizeProfile('scrapecreators', username, r.data, r.meta); },
+    async reels(username, limit, options = {}) { const r = await requestJson(`${base}/user/reels`, { headers, query: { handle: username }, signal: options.signal }); return { items: unwrapItems(r.data).slice(0, limit).map((x) => normalizeReel('scrapecreators', username, x)).filter(Boolean), rawPayload: r.data, requestMeta: r.meta, provider: 'scrapecreators' }; },
+    async transcript(reelUrl, options = {}) { const r = await requestJson(`${base}/post/transcript`, { headers, query: { url: reelUrl }, signal: options.signal }); return normalizeTranscript('scrapecreators', r.data, r.meta); }
   };
 }
 
@@ -110,11 +110,11 @@ export function createInstagramProviders(config) {
     [social.name, new Semaphore(config.PROVIDER_CONCURRENCY || 2)],
     [scrape.name, new Semaphore(config.PROVIDER_CONCURRENCY || 2)]
   ]);
-  async function fallback(operation, providers, args) {
+  async function fallback(operation, providers, args, options = {}) {
     const errors = [];
     for (const provider of providers.filter((item) => item.enabled)) {
       try {
-        const result = await limits.get(provider.name).run(() => provider[operation](...args));
+        const result = await limits.get(provider.name).run(() => provider[operation](...args, options), options);
         if (operation === 'search' || operation === 'reels') {
           if (!result.items.length) throw Object.assign(new Error(`${provider.name} returned no items`), { emptyResult: true });
         }
@@ -122,6 +122,7 @@ export function createInstagramProviders(config) {
         return { ...result, fallbackErrors: errors };
       } catch (error) {
         errors.push({ provider: provider.name, message: error.message, statusCode: error.statusCode, payload: error.responseData });
+        if (options.signal?.aborted) throw Object.assign(error, { fallbackErrors: errors });
         if (!error.emptyResult && !shouldFallback(error)) throw Object.assign(error, { fallbackErrors: errors });
       }
     }
@@ -130,9 +131,9 @@ export function createInstagramProviders(config) {
     throw error;
   }
   return {
-    search: (query, limit) => fallback('search', [scrape, social], [query, limit]),
-    profile: (username) => fallback('profile', [social, scrape], [username]),
-    reels: (username, limit) => fallback('reels', [scrape, social], [username, limit]),
-    transcript: (url) => fallback('transcript', [social, scrape], [url])
+    search: (query, limit, options) => fallback('search', [scrape, social], [query, limit], options),
+    profile: (username, options) => fallback('profile', [social, scrape], [username], options),
+    reels: (username, limit, options) => fallback('reels', [scrape, social], [username, limit], options),
+    transcript: (url, options) => fallback('transcript', [social, scrape], [url], options)
   };
 }

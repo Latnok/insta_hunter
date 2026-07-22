@@ -108,6 +108,7 @@ Restore drill выполняется перед первым production запу
 - counts pending/running/failed;
 - время последнего worker heartbeat;
 - число свежих slot heartbeat должно быть не меньше `WORKER_CONCURRENCY`; `worker-health` проверяет это отдельно для hostname контейнера;
+- при штатной остановке worker сначала отменяет in-flight provider/LLM/media/ffmpeg операции общим signal, поэтому container stop не должен ждать внешние timeout до пяти минут;
 - последний успешный backup timestamp;
 - provider error metadata;
 - LLM usage и latency в настройках/деталях run.

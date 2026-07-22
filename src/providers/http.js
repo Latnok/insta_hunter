@@ -1,4 +1,6 @@
-export async function requestJson(url, { method = 'GET', headers = {}, query, body, timeoutMs = 60_000 } = {}) {
+import { signalWithTimeout } from '../lib/abort.js';
+
+export async function requestJson(url, { method = 'GET', headers = {}, query, body, timeoutMs = 60_000, signal } = {}) {
   const target = new URL(url);
   for (const [key, value] of Object.entries(query || {})) if (value != null) target.searchParams.set(key, String(value));
   const started = Date.now();
@@ -7,10 +9,11 @@ export async function requestJson(url, { method = 'GET', headers = {}, query, bo
     response = await fetch(target, {
       method, headers: { accept: 'application/json', ...headers },
       body: body == null ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(timeoutMs)
+      signal: signalWithTimeout(signal, timeoutMs)
     });
   } catch (error) {
     error.durationMs = Date.now() - started;
+    error.shutdownAbort = Boolean(signal?.aborted);
     throw error;
   }
   const text = await response.text();
@@ -29,5 +32,5 @@ export async function requestJson(url, { method = 'GET', headers = {}, query, bo
 }
 
 export function shouldFallback(error) {
-  return !error.statusCode || error.statusCode === 404 || error.statusCode === 408 || error.statusCode === 429 || error.statusCode >= 500;
+  return !error.shutdownAbort && (!error.statusCode || error.statusCode === 404 || error.statusCode === 408 || error.statusCode === 429 || error.statusCode >= 500);
 }

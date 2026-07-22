@@ -185,6 +185,8 @@ Worker резервирует jobs через `FOR UPDATE SKIP LOCKED`. Прос
 
 Каждый concurrency slot работает под supervisor: временная ошибка резервирования получает ограниченный exponential backoff, а ошибки terminal update и пересчёта pipeline логируются без остановки slot. Процесс и каждый slot публикуют отдельные строки в `worker_heartbeats`; worker healthcheck требует не меньше `WORKER_CONCURRENCY` свежих slot heartbeat на текущем hostname.
 
+Worker создаёт единый shutdown `AbortController`. При `SIGTERM`/`SIGINT` signal сначала отменяет ожидающие semaphore-операции и все in-flight HTTP/LLM/Groq запросы, DNS/media download и `ffmpeg`, затем worker дожидается terminal update jobs и закрывает pool. Shutdown-abort не считается основанием для fallback к следующему provider; запущенный `ffmpeg` принудительно завершается через `SIGKILL`.
+
 Candidate pipeline различает отсутствие контента и технический сбой. Финальный failure обязательного profile/reels job, либо transcript/classify failure при отсутствии хотя бы одного полезного transcript, переводит run в `failed` с агрегированным `error_summary`. Только успешно обработанные, но пустые или шумовые данные дают `insufficient_data`.
 
 ### 4.8 `job_attempts`

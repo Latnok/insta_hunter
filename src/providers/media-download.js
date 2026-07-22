@@ -5,6 +5,7 @@ import net from 'node:net';
 import { createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { Transform } from 'node:stream';
+import { raceWithSignal, signalWithTimeout } from '../lib/abort.js';
 
 export const MAX_MEDIA_BYTES = 25 * 1024 * 1024;
 
@@ -46,7 +47,7 @@ export function isPublicIp(address) {
   return false;
 }
 
-export async function resolveSafeMediaUrl(rawUrl, lookupFn = dns.lookup) {
+export async function resolveSafeMediaUrl(rawUrl, lookupFn = dns.lookup, signal) {
   let url;
   try {
     url = new URL(rawUrl);
@@ -63,18 +64,18 @@ export async function resolveSafeMediaUrl(rawUrl, lookupFn = dns.lookup) {
   const literalVersion = net.isIP(hostname);
   const addresses = literalVersion
     ? [{ address: hostname, family: literalVersion }]
-    : await lookupFn(hostname, { all: true, verbatim: true });
+    : await raceWithSignal(lookupFn(hostname, { all: true, verbatim: true }), signal);
   if (!addresses.length || addresses.some((item) => !isPublicIp(item.address))) {
     throw new Error('Media URL resolves to a non-public address');
   }
   return { url, addresses };
 }
 
-async function requestToFile(resolved, outputPath, { maxBytes, timeoutMs }) {
+async function requestToFile(resolved, outputPath, { maxBytes, timeoutMs, signal: externalSignal }) {
   const { url, addresses } = resolved;
   const pinned = addresses[0];
   const transport = url.protocol === 'https:' ? https : http;
-  const signal = AbortSignal.timeout(timeoutMs);
+  const signal = signalWithTimeout(externalSignal, timeoutMs);
 
   return new Promise((resolve, reject) => {
     const request = transport.request({
@@ -116,7 +117,7 @@ async function requestToFile(resolved, outputPath, { maxBytes, timeoutMs }) {
       response.on('data', (chunk) => { received += chunk.length; });
       const limiter = createByteLimitStream(maxBytes);
       try {
-        await pipeline(response, limiter, createWriteStream(outputPath, { flags: 'wx' }));
+        await pipeline(response, limiter, createWriteStream(outputPath, { flags: 'wx' }), { signal });
         resolve({ bytes: received });
       } catch (error) {
         reject(error);
@@ -131,12 +132,14 @@ export async function downloadMediaToFile(rawUrl, outputPath, {
   lookupFn = dns.lookup,
   maxBytes = MAX_MEDIA_BYTES,
   timeoutMs = 180_000,
-  maxRedirects = 3
+  maxRedirects = 3,
+  signal
 } = {}) {
   let current = rawUrl;
   for (let redirects = 0; redirects <= maxRedirects; redirects += 1) {
-    const resolved = await resolveSafeMediaUrl(current, lookupFn);
-    const result = await requestToFile(resolved, outputPath, { maxBytes, timeoutMs });
+    signal?.throwIfAborted();
+    const resolved = await resolveSafeMediaUrl(current, lookupFn, signal);
+    const result = await requestToFile(resolved, outputPath, { maxBytes, timeoutMs, signal });
     if (!result.redirect) return result;
     if (redirects === maxRedirects) throw new Error('Too many media redirects');
     current = result.redirect.href;

@@ -13,7 +13,15 @@ const config = loadConfig();
 const logger = createLogger('worker');
 const pool = createPool(config);
 const workerId = `${os.hostname()}:${process.pid}`;
-const context = { config, pool, logger, instagram: createInstagramProviders(config), llm: createLlmClient(config) };
+const shutdownController = new AbortController();
+const context = {
+  config,
+  pool,
+  logger,
+  signal: shutdownController.signal,
+  instagram: createInstagramProviders(config),
+  llm: createLlmClient(config)
+};
 const handlers = createJobHandlers(context);
 let stopping = false;
 
@@ -50,6 +58,7 @@ const loops = Array.from({ length: config.WORKER_CONCURRENCY }, (_, slot) => sup
 async function shutdown(signal) {
   if (stopping) return;
   stopping = true;
+  shutdownController.abort(new DOMException(`Worker received ${signal}`, 'AbortError'));
   clearInterval(heartbeatTimer);
   logger.info({ signal }, 'worker stopping');
   await Promise.allSettled(loops);

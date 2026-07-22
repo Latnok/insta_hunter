@@ -432,14 +432,14 @@ Definition of Done:
 - [x] Cover network, 404, 408, 429, 5xx, invalid JSON, empty result and non-retryable 400 branches without live API.
 - [x] Prove discovery creates candidate/source rows without enrichment jobs.
 - [x] Prove fresh profile/reels use cache while force refresh calls providers and upserts the existing reel.
-- [x] Pass 26/26 PostgreSQL integration tests and 42/42 default tests.
+- [x] Pass 26/26 PostgreSQL integration tests and 47/47 default tests.
 
 ## Debug-аудит — 2026-07-22
 
 Проверено локально:
 
-- `npm run check`: успешно, 53 JavaScript-файла и 14 EJS-шаблонов.
-- `npm test`: 42 default-теста успешно; отдельный PostgreSQL-прогон — 26/26.
+- `npm run check`: успешно, 54 JavaScript-файла и 14 EJS-шаблонов.
+- `npm test`: 47 default-тестов успешно; отдельный PostgreSQL-прогон — 26/26.
 - `npm audit --omit=dev`: 0 известных уязвимостей.
 - Docker integration suite выполнен на одноразовой PostgreSQL 16; контейнеры, сеть, volume и тестовые образы удалены.
 - Состав первого Git-коммита проверен на секреты и временные артефакты.
@@ -454,7 +454,7 @@ Definition of Done:
 - [x] Сделать manual cancel/retry согласованными с terminal state: cancel завершает весь связанный pipeline, а разрешённый retry атомарно возвращает failed pipeline в `running`.
 - [x] Закрыть SSRF в Groq fallback download: валидировать protocol/host/IP `media_url`, запрещать loopback, private/link-local и metadata endpoints, учитывать DNS rebinding и редиректы.
 - [x] Ограничивать media download потоково, прекращая чтение после 25 MB.
-- [ ] Добавить общий abort для in-flight provider/LLM операций при shutdown. Wall-clock timeout и принудительный `SIGKILL` для зависшего `ffmpeg` уже реализованы.
+- [x] Добавить общий abort для in-flight provider/LLM операций при shutdown: единый `AbortSignal` проходит через semaphore, HTTP providers, LLM, Groq, DNS/media download и `ffmpeg`; shutdown не запускает provider fallback, а `ffmpeg` получает `SIGKILL`.
 - [x] Вынести `/health/live` до PostgreSQL session/CSRF middleware, отключить пустые anonymous sessions и проверить отсутствие обращения liveness к БД.
 - [x] Не раскрывать внутренние ошибки клиенту: HTMX 5xx и `/health/ready` возвращают безопасный ответ, детали остаются в structured log.
 

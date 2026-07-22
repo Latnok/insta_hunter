@@ -75,3 +75,20 @@ test('normalizes nested Instagram video and thumbnail variants', async () => {
   assert.equal(result.items[0].thumbnailUrl, 'https://cdn.example/fallback.jpg');
   assert.equal(result.items[0].playCount, 42);
 });
+
+test('shutdown abort stops the active provider without starting fallback', async () => {
+  const controller = new AbortController();
+  let calls = 0;
+  globalThis.fetch = async (_url, options) => {
+    calls += 1;
+    return new Promise((_, reject) => {
+      options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true });
+    });
+  };
+  const providers = createInstagramProviders({ SCRAPECREATORS_API_KEY: 'x', SOCIALCRAWL_API_KEY: 'y' });
+  const pending = providers.profile('fashion', { signal: controller.signal });
+  controller.abort(new DOMException('worker stopping', 'AbortError'));
+
+  await assert.rejects(pending, (error) => error.name === 'AbortError');
+  assert.equal(calls, 1);
+});

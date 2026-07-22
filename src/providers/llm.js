@@ -27,11 +27,11 @@ function extractContent(data) {
 }
 
 export function createLlmClient(config) {
-  async function complete({ purpose, messages, schema }) {
+  async function complete({ purpose, messages, schema, signal }) {
     if (!config.LLM_API_KEY || !config.LLM_MODEL) throw new Error('LLM is not configured');
     const endpoint = `${config.LLM_BASE_URL.replace(/\/$/, '')}/chat/completions`;
     const response = await requestJson(endpoint, {
-      method: 'POST', timeoutMs: 180_000,
+      method: 'POST', timeoutMs: 180_000, signal,
       headers: { authorization: `Bearer ${config.LLM_API_KEY}`, 'content-type': 'application/json' },
       body: { model: config.LLM_MODEL, response_format: { type: 'json_object' }, messages }
     });
@@ -39,7 +39,7 @@ export function createLlmClient(config) {
     return { purpose, parsed: schema.parse(raw), rawResponse: response.data, meta: response.meta, usage: response.data.usage || {} };
   }
   return {
-    evaluate: (messages) => complete({ purpose: 'candidate_evaluation', messages, schema: evaluationSchema }),
-    proposeCriteria: (messages) => complete({ purpose: 'criteria_proposal', messages, schema: criteriaSchema })
+    evaluate: (messages, options = {}) => complete({ purpose: 'candidate_evaluation', messages, schema: evaluationSchema, signal: options.signal }),
+    proposeCriteria: (messages, options = {}) => complete({ purpose: 'criteria_proposal', messages, schema: criteriaSchema, signal: options.signal })
   };
 }

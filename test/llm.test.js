@@ -28,3 +28,14 @@ test('parses OpenAI-compatible JSON response', async () => {
   assert.equal(result.parsed.recommendation, 'needs_manual_review');
   assert.equal(result.usage.prompt_tokens, 10);
 });
+
+test('forwards shutdown abort to an in-flight LLM request', async () => {
+  const controller = new AbortController();
+  globalThis.fetch = async (_url, options) => new Promise((_, reject) => {
+    options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true });
+  });
+  const client = createLlmClient({ LLM_BASE_URL: 'https://llm.example/v1', LLM_API_KEY: 'key', LLM_MODEL: 'model' });
+  const pending = client.evaluate([{ role: 'user', content: 'test' }], { signal: controller.signal });
+  controller.abort(new DOMException('worker stopping', 'AbortError'));
+  await assert.rejects(pending, (error) => error.name === 'AbortError');
+});

@@ -15,3 +15,16 @@ test('limits concurrent provider operations', async () => {
   })));
   assert.equal(maximum, 2);
 });
+
+test('removes an aborted provider operation while it waits for capacity', async () => {
+  const semaphore = new Semaphore(1);
+  let release;
+  const active = semaphore.run(() => new Promise((resolve) => { release = resolve; }));
+  const controller = new AbortController();
+  const waiting = semaphore.run(async () => 'should not run', { signal: controller.signal });
+  controller.abort(new DOMException('worker stopping', 'AbortError'));
+  await assert.rejects(waiting, (error) => error.name === 'AbortError');
+  release();
+  await active;
+  assert.equal(await semaphore.run(async () => 'next'), 'next');
+});

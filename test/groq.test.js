@@ -3,10 +3,11 @@ import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { Readable, Writable } from 'node:stream';
+import { EventEmitter } from 'node:events';
 import { pipeline } from 'node:stream/promises';
 import test from 'node:test';
 
-import { transcribeWithGroq } from '../src/providers/groq.js';
+import { runFfmpeg, transcribeWithGroq } from '../src/providers/groq.js';
 import {
   createByteLimitStream,
   isPublicIp,
@@ -115,6 +116,33 @@ test('DNS results are all validated before a media connection is allowed', async
   assert.equal(resolved.addresses[0].address, '93.184.216.34');
   assert.equal(isPublicIp('93.184.216.34'), true);
   assert.equal(isPublicIp('192.168.1.1'), false);
+});
+
+test('shutdown abort interrupts DNS resolution before media download', async () => {
+  const controller = new AbortController();
+  const pending = resolveSafeMediaUrl(
+    'https://cdn.example.com/video.mp4',
+    async () => new Promise(() => {}),
+    controller.signal
+  );
+  controller.abort(new DOMException('worker stopping', 'AbortError'));
+  await assert.rejects(pending, (error) => error.name === 'AbortError');
+});
+
+test('shutdown abort kills an in-flight ffmpeg process', async () => {
+  const controller = new AbortController();
+  let killedWith;
+  const child = new EventEmitter();
+  child.stderr = new EventEmitter();
+  child.kill = (signal) => { killedWith = signal; };
+  const pending = runFfmpeg('input', 'output', {
+    signal: controller.signal,
+    spawnImpl: () => child,
+    timeoutMs: 60_000
+  });
+  controller.abort(new DOMException('worker stopping', 'AbortError'));
+  await assert.rejects(pending, (error) => error.name === 'AbortError');
+  assert.equal(killedWith, 'SIGKILL');
 });
 
 test('streaming byte limiter stops chunked media at the configured boundary', async () => {
