@@ -109,3 +109,5 @@ docker build -t instagram-hunter:test .
 docker compose -p insta_hunter_integration -f compose.integration.yaml up --build --abort-on-container-exit --exit-code-from test
 docker compose -p insta_hunter_integration -f compose.integration.yaml down
 ```
+
+GitHub Actions запускает тот же обязательный набор при каждом push в `master` и в pull request: syntax-check, default tests, отдельные PostgreSQL integration/security/queue/idempotency suites на PostgreSQL 16 и `npm audit --omit=dev --audit-level=high`. Integration-команда получает `TEST_DATABASE_URL`, поэтому suites не могут тихо завершиться как skipped.

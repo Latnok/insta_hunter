@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: instagram_hunter_test
+          POSTGRES_USER: instagram_hunter_test
+          POSTGRES_PASSWORD: integration-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U instagram_hunter_test -d instagram_hunter_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.11.0
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Check JavaScript and EJS syntax
+        run: npm run check
+
+      - name: Run default tests
+        run: npm test
+
+      - name: Run required PostgreSQL suites
+        run: npm run test:integration
+        env:
+          TEST_DATABASE_URL: postgresql://instagram_hunter_test:integration-only@127.0.0.1:5432/instagram_hunter_test
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high

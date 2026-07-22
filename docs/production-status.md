@@ -35,6 +35,7 @@ Provider credentials for ScrapCreators, SocialCrawl and Groq were copied server-
 - Automated test stage: 19/19 default tests passed; 47 JavaScript files and 14 EJS templates were checked.
 - PostgreSQL integration/security/queue/idempotency stage: 17/17 tests passed against a disposable PostgreSQL 16 instance.
 - Latest verification: 32/32 integration tests and 54/54 default tests pass without live API calls; syntax checks cover 59 JavaScript files and 14 EJS templates.
+- Required GitHub Actions CI now runs syntax, default, PostgreSQL integration and high-severity production dependency audit gates on pushes to `master` and pull requests.
 
 No real candidate recommendation was produced from the sampled account because its reels contained no useful spoken review. This is a content limitation, not an integration failure.
 

@@ -471,7 +471,7 @@ Definition of Done:
 - [x] Валидировать и ограничивать `offset`, `status`, `quality` и `jobType` query-параметры: endpoint-specific allowlists, одиночные значения, `offset` 0–10000 и `search` до 100 символов проверяются до SQL; некорректный ввод возвращает 400, очередь показывает select допустимых job types.
 - [x] Сериализовать выделение `criteria_versions.version_number`: manual/LLM drafts используют общий transactional service и advisory lock, общий также с activation; 12 конкурентных транзакций получают последовательные версии без unique violation.
 - [ ] До первого изменения production-схемы утвердить отдельный DBA-процесс upgrade/rollback; bootstrap полной схемы намеренно не модифицирует непустую БД.
-- [ ] Вынести PostgreSQL suites в обязательную CI-команду. Обычный `npm test` сейчас зелёный при трёх пропущенных integration/security/queue suites; CI должна поднимать временную БД и падать при skip.
+- [x] Вынести PostgreSQL suites в обязательную CI-команду: GitHub Actions на push в `master` и pull request поднимает PostgreSQL 16, передаёт обязательный `TEST_DATABASE_URL`, отдельно запускает syntax/default/integration suites и production dependency audit с read-only repository permissions.
 - [x] Добавить regression-тесты для running-job cancellation race и cancel→pipeline terminal state. Lease fencing, stale-job max attempts, liveness, безопасные 5xx и SSRF/media size limits также покрыты.
 
 ### P2 — качество эксплуатации и интерфейса
