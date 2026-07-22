@@ -1,9 +1,10 @@
 <div id="ai-query-suggestion" class="ai-query-suggestion"<% if (['pending', 'running', 'retry_wait'].includes(job.status)) { %> hx-get="/ui/discovery-query-suggestions/<%= job.id %>" hx-trigger="every 2s" hx-swap="outerHTML"<% } %>>
-  <% if (['pending', 'running', 'retry_wait'].includes(job.status)) { %>
-    <span class="chip">ИИ готовит запрос…</span><small class="muted">Можно продолжать работать на странице.</small>
+  <% if (['pending', 'running'].includes(job.status)) { %>
+    <span class="chip">ИИ готовит запрос…</span><small class="muted">Обычно это занимает до двух минут. Можно продолжать работать на странице.</small>
+  <% } else if (job.status === 'retry_wait') { %>
+    <span class="chip">ИИ повторяет попытку</span><small class="muted"><%= job.error_summary || 'Предыдущая попытка не завершилась.' %></small>
   <% } else if (job.status === 'succeeded' && queries.length) { %>
-    <div data-discovery-query-default="<%= queries[0] %>"><strong>Запрос подготовлен</strong><small class="muted block">Первый вариант уже подставлен. Можно выбрать другой:</small></div>
-    <div class="query-suggestions"><% queries.forEach((query) => { %><button type="button" class="query-suggestion" data-discovery-query="<%= query %>"><%= query %></button><% }) %></div>
+    <span class="chip">Запрос готов</span><small class="muted">Обновляем страницу и подставляем его в поле…</small>
   <% } else if (job.status === 'succeeded') { %>
     <p class="error-text">ИИ не предложил поисковых запросов. Проверьте данные и активные критерии.</p>
   <% } else { %>

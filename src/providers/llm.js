@@ -19,6 +19,11 @@ export const criteriaSchema = z.object({
   diff_summary: z.string().min(1).max(4000)
 });
 
+export const outreachSchema = z.object({
+  message_text: z.string().min(1).max(5000),
+  personalization_reason: z.string().min(1).max(5000)
+});
+
 function extractContent(data) {
   const content = data?.choices?.[0]?.message?.content ?? data?.output_text;
   if (typeof content !== 'string') throw new Error('LLM response has no text content');
@@ -40,6 +45,7 @@ export function createLlmClient(config) {
   }
   return {
     evaluate: (messages, options = {}) => complete({ purpose: 'candidate_evaluation', messages, schema: evaluationSchema, signal: options.signal }),
-    proposeCriteria: (messages, options = {}) => complete({ purpose: 'criteria_proposal', messages, schema: criteriaSchema, signal: options.signal })
+    proposeCriteria: (messages, options = {}) => complete({ purpose: 'criteria_proposal', messages, schema: criteriaSchema, signal: options.signal }),
+    draftOutreach: (messages, options = {}) => complete({ purpose: 'outreach_proposal', messages, schema: outreachSchema, signal: options.signal })
   };
 }

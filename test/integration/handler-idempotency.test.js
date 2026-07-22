@@ -269,7 +269,7 @@ integration('job handler idempotency after worker restart', () => {
         return {
           parsed: {
             checklist_markdown: 'proposed criteria', search_queries: ['clothing'],
-            transcript_rules: { noisePatterns: [], lowValuePatterns: [], minCharacters: 12, minWords: 3 },
+            transcript_rules: { noisePatterns: ['(?i)dimatorzok'], lowValuePatterns: [], minCharacters: 12, minWords: 3 },
             diff_summary: 'fixture change'
           },
           rawResponse: { fixture: true }, usage: {}, meta: { durationMs: 1 }
@@ -286,6 +286,40 @@ integration('job handler idempotency after worker restart', () => {
     const logs = await pool.query("select count(*)::int as count from llm_logs where job_id=$1 and status='succeeded'", [job.id]);
     assert.equal(drafts.rows[0].count, 1);
     assert.equal(logs.rows[0].count, 1);
+    const stored = await pool.query('select transcript_rules from criteria_versions where source_job_id=$1', [job.id]);
+    assert.deepEqual(stored.rows[0].transcript_rules.noisePatterns, ['dimatorzok']);
+  });
+
+  test('repeated outreach job stores one approval draft without another LLM call', async () => {
+    const { account, criteria } = await accountWithContent('approved');
+    const evaluationLog = await pool.query(`
+      insert into llm_logs(purpose,account_id,criteria_version_id,base_url,model,request_messages,status)
+      values ('candidate_evaluation',$1,$2,'https://example.invalid','test-model','[]','succeeded') returning id
+    `, [account.id, criteria.id]);
+    await pool.query(`
+      insert into evaluations(account_id,criteria_version_id,recommendation,confidence,positive_signals,explanation,llm_log_id)
+      values ($1,$2,'recommended_approve',91,'["personal style"]','good fit',$3)
+    `, [account.id, criteria.id, evaluationLog.rows[0].id]);
+    const job = await insertJob('draft_outreach', account.id);
+    let calls = 0;
+    const parsed = {
+      message_text: 'Здравствуйте! Нам близка ваша подача образов. Интересно обсудить бартерное сотрудничество?',
+      personalization_reason: 'Автор регулярно показывает образы с одеждой и подходит по активным критериям.'
+    };
+    const llm = {
+      draftOutreach: async () => {
+        calls += 1;
+        return { parsed, rawResponse: { fixture: true }, usage: {}, meta: { durationMs: 1 } };
+      }
+    };
+    const handler = createJobHandlers({ pool, llm, config }).draft_outreach;
+
+    assert.deepEqual(await handler(job), parsed);
+    assert.equal((await handler(job)).cached, true);
+    assert.equal(calls, 1);
+    const proposals = await pool.query('select * from outreach_proposals where job_id=$1', [job.id]);
+    assert.equal(proposals.rowCount, 1);
+    assert.equal(proposals.rows[0].status, 'draft');
   });
 
   test('lifecycle change during a provider call blocks state writes and downstream jobs', async () => {

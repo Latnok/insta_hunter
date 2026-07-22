@@ -20,6 +20,18 @@ export const DEFAULT_TRANSCRIPT_RULES = Object.freeze({
   minWords: 3
 });
 
+function normalizeRegexPattern(pattern) {
+  return String(pattern).replace(/^\(\?[iu]+\)/i, '');
+}
+
+export function normalizeTranscriptRules(rules = DEFAULT_TRANSCRIPT_RULES) {
+  return {
+    ...rules,
+    noisePatterns: (rules.noisePatterns || []).map(normalizeRegexPattern),
+    lowValuePatterns: (rules.lowValuePatterns || []).map(normalizeRegexPattern)
+  };
+}
+
 export function validateTranscriptRules(rules = DEFAULT_TRANSCRIPT_RULES) {
   for (const pattern of [...(rules.noisePatterns || []), ...(rules.lowValuePatterns || [])]) {
     new RegExp(pattern, 'iu');

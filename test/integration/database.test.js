@@ -19,6 +19,7 @@ import {
 } from '../../src/services/accounts.js';
 import { commitCsv } from '../../src/services/imports.js';
 import { createCriteriaDraft } from '../../src/services/criteria.js';
+import { decideOutreachDraft, regenerateOutreachDraft, saveOutreachDraft } from '../../src/services/outreach.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const integration = databaseUrl ? describe : describe.skip;
@@ -250,6 +251,8 @@ integration('PostgreSQL repositories, constraints and lifecycle transitions', ()
     const approved = await approveAccount(pool, account.id, {});
     assert.equal(approved.lifecycle_status, 'approved');
     assert.ok(approved.approved_at);
+    const outreachJobs = await pool.query("select job_type,status from jobs where account_id=$1 and job_type='draft_outreach'", [account.id]);
+    assert.deepEqual(outreachJobs.rows, [{ job_type: 'draft_outreach', status: 'pending' }]);
 
     const archived = await archiveAccount(pool, account.id, 'pause', {});
     assert.equal(archived.lifecycle_status, 'archived');
@@ -258,12 +261,39 @@ integration('PostgreSQL repositories, constraints and lifecycle transitions', ()
     const restored = await restoreAccount(pool, account.id, {});
     assert.equal(restored.lifecycle_status, 'approved');
     assert.equal(restored.archived_at, null);
+    const outreachJobCount = await pool.query("select count(*)::int as count from jobs where account_id=$1 and job_type='draft_outreach'", [account.id]);
+    assert.equal(outreachJobCount.rows[0].count, 1);
 
     const audit = await pool.query(
       'select action from audit_events where entity_id=$1 order by id',
       [account.id]
     );
     assert.deepEqual(audit.rows.map((row) => row.action), ['approved', 'archived', 'approved']);
+  });
+
+  test('outreach draft can be edited, approved and regenerated only for approved bloggers', async () => {
+    const account = (await pool.query(`
+      insert into instagram_accounts(username,instagram_url,source_type,lifecycle_status)
+      values ('outreach_user','https://www.instagram.com/outreach_user/','manual','approved') returning *
+    `)).rows[0];
+    const proposal = (await pool.query(`
+      insert into outreach_proposals(account_id,message_text,personalization_reason)
+      values ($1,'Initial text','Relevant clothing content') returning *
+    `, [account.id])).rows[0];
+
+    const edited = await saveOutreachDraft(pool, proposal.id, 'Edited warm proposal', { ip: '127.0.0.1' });
+    assert.equal(edited.message_text, 'Edited warm proposal');
+    const approved = await decideOutreachDraft(pool, proposal.id, 'approved', {}, 'Final text approved with one click');
+    assert.equal(approved.status, 'approved');
+    assert.equal(approved.message_text, 'Final text approved with one click');
+    assert.ok(approved.approved_at);
+    await assert.rejects(saveOutreachDraft(pool, proposal.id, 'Too late', {}), /only a draft|только черновик/i);
+
+    const job = await regenerateOutreachDraft(pool, { JOB_MAX_ATTEMPTS: 3 }, account.id, {});
+    assert.equal(job.job_type, 'draft_outreach');
+    assert.equal(job.status, 'pending');
+    const actions = await pool.query("select action from audit_events where action like 'outreach_%' order by id");
+    assert.deepEqual(actions.rows.map((row) => row.action), ['outreach_edit', 'outreach_approved', 'outreach_regenerate']);
   });
 
   test('CSV commit atomically creates every new account, pipeline and job', async () => {

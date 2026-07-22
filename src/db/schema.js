@@ -8,11 +8,11 @@ const defaultSchemaFile = path.resolve(currentDir, '../../db/schema.sql');
 const requiredTables = [
   'schema_metadata', 'instagram_accounts', 'discovery_runs', 'account_sources',
   'account_profiles', 'reels', 'criteria_versions', 'pipeline_runs', 'jobs',
-  'job_attempts', 'llm_logs', 'evaluations', 'audit_events', 'provider_call_logs',
+  'job_attempts', 'llm_logs', 'evaluations', 'outreach_proposals', 'audit_events', 'provider_call_logs',
   'csv_import_batches', 'user_sessions', 'worker_heartbeats'
 ];
 
-export const currentSchemaVersion = 1;
+export const currentSchemaVersion = 2;
 
 export async function getSchemaStatus(queryable) {
   const existing = await queryable.query(`

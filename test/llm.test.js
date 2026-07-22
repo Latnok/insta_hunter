@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { criteriaSchema, createLlmClient, evaluationSchema } from '../src/providers/llm.js';
+import { criteriaSchema, createLlmClient, evaluationSchema, outreachSchema } from '../src/providers/llm.js';
 
 const originalFetch = globalThis.fetch;
 test.afterEach(() => { globalThis.fetch = originalFetch; });
@@ -13,6 +13,14 @@ test('validates candidate evaluation schema', () => {
 
 test('validates criteria proposal schema', () => {
   assert.doesNotThrow(() => criteriaSchema.parse({ checklist_markdown: '# Criteria', search_queries: ['fashion'], transcript_rules: { noisePatterns: [], lowValuePatterns: [], minCharacters: 12, minWords: 3 }, diff_summary: 'Updated' }));
+});
+
+test('validates personalized outreach schema', () => {
+  assert.doesNotThrow(() => outreachSchema.parse({
+    message_text: 'Здравствуйте! Нам близок ваш стиль. Интересно обсудить бартер?',
+    personalization_reason: 'В профиле и роликах регулярно показаны образы с одеждой.'
+  }));
+  assert.throws(() => outreachSchema.parse({ message_text: '', personalization_reason: '' }));
 });
 
 test('parses OpenAI-compatible JSON response', async () => {

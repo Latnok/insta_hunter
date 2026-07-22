@@ -10,6 +10,7 @@ import { withTransaction } from '../db/pool.js';
 import { enqueueJob } from '../db/repositories/jobs.js';
 import { cancelJob, retryJob } from '../services/jobs.js';
 import { createCriteriaDraft, criteriaWriteLockKey } from '../services/criteria.js';
+import { decideOutreachDraft, regenerateOutreachDraft, saveOutreachDraft } from '../services/outreach.js';
 
 function back(res, fallback = '/candidates') {
   res.set('HX-Redirect', fallback);
@@ -121,10 +122,27 @@ export function createActionRouter({ pool, config }) {
     return back(res, runType === 'blogger_refresh' ? '/bloggers' : '/candidates');
   });
 
-  router.post('/accounts/:id/approve', async (req, res) => { await approveAccount(pool, req.params.id, requestMeta(req)); return back(res); });
+  router.post('/accounts/:id/approve', async (req, res) => { await approveAccount(pool, req.params.id, requestMeta(req), config); return back(res); });
   router.post('/accounts/:id/reject', async (req, res) => { await rejectAccount(pool, req.params.id, req.body.reason || null, requestMeta(req)); return back(res); });
   router.post('/accounts/:id/archive', async (req, res) => { await archiveAccount(pool, req.params.id, req.body.reason || null, requestMeta(req)); return back(res, '/bloggers'); });
   router.post('/accounts/:id/restore', async (req, res) => { await restoreAccount(pool, req.params.id, requestMeta(req)); return back(res, '/bloggers?status=archived'); });
+
+  router.post('/outreach/:id/save', async (req, res) => {
+    await saveOutreachDraft(pool, req.params.id, req.body.messageText, requestMeta(req));
+    return back(res, '/bloggers');
+  });
+  router.post('/outreach/:id/approve', async (req, res) => {
+    await decideOutreachDraft(pool, req.params.id, 'approved', requestMeta(req), req.body.messageText);
+    return back(res, '/bloggers');
+  });
+  router.post('/outreach/:id/reject', async (req, res) => {
+    await decideOutreachDraft(pool, req.params.id, 'rejected', requestMeta(req));
+    return back(res, '/bloggers');
+  });
+  router.post('/accounts/:id/outreach/regenerate', async (req, res) => {
+    await regenerateOutreachDraft(pool, config, req.params.id, requestMeta(req));
+    return back(res, '/bloggers');
+  });
 
   router.post('/jobs/:id/retry', async (req, res) => {
     await retryJob(pool, req.params.id);

@@ -6,7 +6,8 @@ export const jobTypes = [
   'fetch_transcript',
   'classify_transcript',
   'evaluate_candidate',
-  'propose_criteria'
+  'propose_criteria',
+  'draft_outreach'
 ];
 export const transcriptQualities = ['useful', 'noise', 'low_value', 'empty'];
 

@@ -3,6 +3,7 @@ import { upsertAccount } from '../db/repositories/accounts.js';
 import { assertTransition } from '../domain/accounts.js';
 import { startPipeline } from './pipelines.js';
 import { cancelAccountWork } from './jobs.js';
+import { enqueueJob } from '../db/repositories/jobs.js';
 
 export async function addManualAccount(pool, config, input, sourceNote = null) {
   const account = await withTransaction(pool, (client) => upsertAccount(client, {
@@ -17,7 +18,7 @@ export async function addManualAccount(pool, config, input, sourceNote = null) {
   return { account, pipeline };
 }
 
-async function transition(pool, { accountId, to, reason, requestMeta = {} }) {
+async function transition(pool, { accountId, to, reason, requestMeta = {}, maxAttempts = 3, draftOutreach = false }) {
   return withTransaction(pool, async (client) => {
     const result = await client.query('select * from instagram_accounts where id=$1 for update', [accountId]);
     const account = result.rows[0];
@@ -37,6 +38,15 @@ async function transition(pool, { accountId, to, reason, requestMeta = {} }) {
       `update instagram_accounts set ${updates.join(', ')} where id=$1 returning *`,
       parameters
     );
+    if (draftOutreach && to === 'approved' && account.lifecycle_status === 'candidate') {
+      await enqueueJob(client, {
+        accountId,
+        jobType: 'draft_outreach',
+        payload: { trigger: 'initial_approval' },
+        dedupeKey: `account:${accountId}:initial-outreach`,
+        maxAttempts
+      });
+    }
     if (to === 'rejected' || to === 'archived') {
       await cancelAccountWork(client, accountId, `account ${to}`);
     }
@@ -48,7 +58,9 @@ async function transition(pool, { accountId, to, reason, requestMeta = {} }) {
   });
 }
 
-export const approveAccount = (pool, accountId, requestMeta) => transition(pool, { accountId, to: 'approved', requestMeta });
+export const approveAccount = (pool, accountId, requestMeta, config = {}) => transition(pool, {
+  accountId, to: 'approved', requestMeta, draftOutreach: true, maxAttempts: config.JOB_MAX_ATTEMPTS || 3
+});
 export const rejectAccount = (pool, accountId, reason, requestMeta) => transition(pool, { accountId, to: 'rejected', reason, requestMeta });
 export const archiveAccount = (pool, accountId, reason, requestMeta) => transition(pool, { accountId, to: 'archived', reason, requestMeta });
 export const restoreAccount = (pool, accountId, requestMeta) => transition(pool, { accountId, to: 'approved', requestMeta });

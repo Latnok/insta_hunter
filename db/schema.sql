@@ -4,7 +4,7 @@ create table schema_metadata (
   schema_version integer not null check (schema_version > 0),
   installed_at timestamptz not null default now()
 );
-insert into schema_metadata(singleton, schema_version) values (true, 1);
+insert into schema_metadata(singleton, schema_version) values (true, 2);
 
 create table instagram_accounts (
   id bigint generated always as identity primary key,
@@ -151,7 +151,7 @@ create table jobs (
   discovery_run_id bigint references discovery_runs(id) on delete cascade,
   account_id bigint references instagram_accounts(id) on delete cascade,
   reel_id bigint references reels(id) on delete cascade,
-  job_type text not null check (job_type in ('discover_accounts','fetch_profile','fetch_reels','fetch_transcript','classify_transcript','evaluate_candidate','propose_criteria')),
+  job_type text not null check (job_type in ('discover_accounts','fetch_profile','fetch_reels','fetch_transcript','classify_transcript','evaluate_candidate','propose_criteria','draft_outreach')),
   status text not null default 'pending' check (status in ('pending','running','retry_wait','succeeded','failed','cancelled')),
   priority integer not null default 0,
   payload jsonb not null default '{}'::jsonb,
@@ -192,7 +192,7 @@ alter table jobs
 
 create table llm_logs (
   id bigint generated always as identity primary key,
-  purpose text not null check (purpose in ('candidate_evaluation','criteria_proposal')),
+  purpose text not null check (purpose in ('candidate_evaluation','criteria_proposal','outreach_proposal')),
   job_id bigint references jobs(id) on delete set null,
   account_id bigint references instagram_accounts(id) on delete set null,
   criteria_version_id bigint references criteria_versions(id) on delete set null,
@@ -227,6 +227,22 @@ create table evaluations (
 );
 create index evaluations_account_idx on evaluations(account_id, created_at desc);
 create unique index evaluations_job_uidx on evaluations(job_id) where job_id is not null;
+
+create table outreach_proposals (
+  id bigint generated always as identity primary key,
+  account_id bigint not null references instagram_accounts(id) on delete cascade,
+  job_id bigint references jobs(id) on delete set null,
+  llm_log_id bigint references llm_logs(id) on delete set null,
+  message_text text not null check (char_length(message_text) between 1 and 5000),
+  personalization_reason text not null check (char_length(personalization_reason) between 1 and 5000),
+  status text not null default 'draft' check (status in ('draft','approved','rejected','superseded')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  approved_at timestamptz,
+  rejected_at timestamptz
+);
+create unique index outreach_proposals_job_uidx on outreach_proposals(job_id) where job_id is not null;
+create index outreach_proposals_account_idx on outreach_proposals(account_id, created_at desc);
 
 alter table criteria_versions
   add column source_job_id bigint references jobs(id) on delete set null;

@@ -14,7 +14,13 @@ export function createPageRouter({ pool, config }) {
     const statuses = query.status === 'rejected' ? ['rejected'] : ['candidate'];
     const accounts = await listAccounts(pool, { statuses, search: query.search, limit: pageSize, offset: query.offset });
     accounts.forEach((account) => { account.is_stale = !account.profile_fetched_at || Date.now() - new Date(account.profile_fetched_at).getTime() >= config.freshnessMs; });
-    res.render('accounts', { title: req.t('candidates'), active: 'candidates', accounts, mode: 'candidates', query, config });
+    const latestSuggestion = await pool.query(`
+      select search_queries from criteria_versions
+      where source='llm' and status in ('draft','active') and jsonb_array_length(search_queries) > 0
+      order by version_number desc limit 1
+    `);
+    const aiSearchQueries = latestSuggestion.rows[0]?.search_queries || [];
+    res.render('accounts', { title: req.t('candidates'), active: 'candidates', accounts, mode: 'candidates', query, config, aiSearchQueries });
   });
 
   router.get('/bloggers', async (req, res) => {
@@ -56,6 +62,7 @@ export function createPageRouter({ pool, config }) {
     const queries = Array.isArray(job.search_queries)
       ? job.search_queries.map((value) => String(value).trim()).filter(Boolean)
       : [];
+    if (job.status === 'succeeded' && queries.length) res.set('HX-Refresh', 'true');
     return res.render('partials/discovery-query-suggestion', { job, queries });
   });
 
@@ -65,7 +72,10 @@ export function createPageRouter({ pool, config }) {
     const reels = await listAccountReels(pool, account.id, 20);
     const audit = await pool.query(`select * from audit_events where entity_type='instagram_account' and entity_id=$1 order by created_at desc limit 20`, [account.id]);
     const jobs = await pool.query('select * from jobs where account_id=$1 order by created_at desc limit 20', [account.id]);
-    return res.render('partials/account-drawer', { account, reels, audit: audit.rows, jobs: jobs.rows, config });
+    const outreach = await pool.query(`
+      select * from outreach_proposals where account_id=$1 order by created_at desc limit 10
+    `, [account.id]);
+    return res.render('partials/account-drawer', { account, reels, audit: audit.rows, jobs: jobs.rows, outreach: outreach.rows, config });
   });
 
   router.get('/ui/reels/:id', async (req, res) => {

@@ -20,6 +20,39 @@
     </form></section>
   <% } %>
   <% if (account.lifecycle_status === 'approved') { %>
+    <% const latestOutreach = outreach?.[0]; const outreachJob = jobs.find((job) => job.job_type === 'draft_outreach'); const activeOutreachJob = jobs.find((job) => job.job_type === 'draft_outreach' && ['pending','running','retry_wait'].includes(job.status)); %>
+    <section class="outreach-section">
+      <h3>Предложение о сотрудничестве</h3>
+      <% if (activeOutreachJob && (!latestOutreach || String(latestOutreach.job_id) !== String(activeOutreachJob.id))) { %>
+        <div hx-get="/ui/accounts/<%= account.id %>" hx-target="#drawer" hx-swap="innerHTML" hx-trigger="every 2s">
+          <p class="notice">ИИ готовит персональное предложение. Карточка обновится автоматически.</p>
+        </div>
+      <% } else if (latestOutreach) { %>
+        <div class="chips"><span class="chip status-<%= latestOutreach.status %>"><%= latestOutreach.status === 'draft' ? 'ждёт утверждения' : latestOutreach.status %></span></div>
+        <p class="outreach-reason"><strong>Почему пишем именно этому блогеру</strong><br><%= latestOutreach.personalization_reason %></p>
+        <% if (latestOutreach.status === 'draft') { %>
+          <form method="post" action="/outreach/<%= latestOutreach.id %>/save" class="stack">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <label>Текст для блогера<textarea class="outreach-message" name="messageText" rows="10" maxlength="5000" required><%= latestOutreach.message_text %></textarea></label>
+            <div class="outreach-actions">
+              <button class="button secondary">Сохранить правки</button>
+              <button class="button success" formaction="/outreach/<%= latestOutreach.id %>/approve">Утвердить этот текст</button>
+              <button class="button danger" formnovalidate formaction="/outreach/<%= latestOutreach.id %>/reject">Отклонить</button>
+            </div>
+          </form>
+        <% } else { %>
+          <div class="outreach-message-static"><%= latestOutreach.message_text %></div>
+        <% } %>
+      <% } else if (outreachJob?.status === 'failed') { %>
+        <p class="error-text">Не удалось подготовить предложение: <%= outreachJob.error_summary || 'неизвестная ошибка' %></p>
+      <% } else { %>
+        <p class="muted">Предложение ещё не подготовлено.</p>
+      <% } %>
+      <form method="post" action="/accounts/<%= account.id %>/outreach/regenerate" data-confirm="Подготовить новый вариант? Текущий неутверждённый черновик будет заменён.">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button class="button secondary"><%= latestOutreach ? 'Предложить другой вариант' : 'Подготовить предложение' %></button>
+      </form>
+    </section>
     <section><h3>Refresh</h3><form method="post" action="/accounts/<%= account.id %>/pipeline" class="stack">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <label>Reels <input type="number" name="reelsLimit" min="1" max="<%= config.REELS_MAX_LIMIT %>" value="<%= config.REELS_DEFAULT_LIMIT %>"></label>

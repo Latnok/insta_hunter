@@ -7,17 +7,19 @@
       <div><h2>Поиск новых блогеров</h2><p class="muted">Опишите, каких авторов нужно найти, или попросите ИИ подготовить запрос по одобренным и отклонённым примерам.</p></div>
       <form method="post" action="/discovery-runs" class="toolbar-form discovery-search-form">
         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-        <label class="field-grow"><span>Что искать в Instagram</span><input id="discovery-query" name="query" placeholder="Например: блогеры с обзорами женской одежды" maxlength="200" required></label>
+        <label class="field-grow"><span>Поисковый запрос</span><input id="discovery-query" name="query" value="<%= aiSearchQueries[0] || '' %>" list="discovery-query-options" placeholder="Например: блогеры с обзорами женской одежды" maxlength="200" autocomplete="off" required><datalist id="discovery-query-options"><% aiSearchQueries.forEach((item) => { %><option value="<%= item %>"><% }) %></datalist></label>
         <label><span>Сколько кандидатов</span><input class="small-input" type="number" name="limit" min="1" max="<%= config.DISCOVERY_MAX_LIMIT %>" value="<%= config.DISCOVERY_DEFAULT_LIMIT %>"></label>
         <button class="button primary search-submit">Найти кандидатов</button>
       </form>
-      <div id="ai-query-suggestion" class="ai-query-suggestion">
+      <% if (aiSearchQueries.length) { %>
+        <div id="ai-query-suggestion" class="ai-query-suggestion"><div><strong>Запрос подготовлен ИИ</strong><small class="muted block">В поле уже подставлен первый вариант. Нажмите стрелку в поле, чтобы выбрать один из <%= aiSearchQueries.length %> вариантов.</small></div><form hx-post="/discovery-query-suggestions" hx-target="#ai-query-suggestion" hx-swap="outerHTML"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="button secondary">Сформировать заново</button></form></div>
+      <% } else { %><div id="ai-query-suggestion" class="ai-query-suggestion">
         <form hx-post="/discovery-query-suggestions" hx-target="#ai-query-suggestion" hx-swap="outerHTML">
           <input type="hidden" name="_csrf" value="<%= csrfToken %>">
           <button class="button secondary">Предложить запрос через ИИ</button>
         </form>
         <small class="muted">ИИ проанализирует доступные профили и полезные расшифровки, создаст черновик критериев и подставит поисковую фразу.</small>
-      </div>
+      </div><% } %>
     </div>
     <div class="candidate-imports stack">
       <h2>Добавить напрямую</h2>

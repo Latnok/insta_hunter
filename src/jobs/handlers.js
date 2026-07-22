@@ -2,7 +2,7 @@ import { withTransaction } from '../db/pool.js';
 import { upsertAccount } from '../db/repositories/accounts.js';
 import { enqueueJob } from '../db/repositories/jobs.js';
 import { isStale } from '../domain/accounts.js';
-import { classifyTranscript, validateTranscriptRules } from '../domain/transcripts.js';
+import { classifyTranscript, normalizeTranscriptRules, validateTranscriptRules } from '../domain/transcripts.js';
 import { transcribeWithGroq } from '../providers/groq.js';
 import { cancelPipelineWork } from '../services/jobs.js';
 import { createCriteriaDraft } from '../services/criteria.js';
@@ -274,32 +274,108 @@ async function handleCriteriaProposal(context, job) {
   `)).rows;
   if (!samples.length) throw new Error('No decided information-complete accounts available');
   const messages = [
-    { role: 'system', content: 'Compare approved and rejected Instagram clothing bloggers and propose an improved criteria version. Return only JSON.' },
+    { role: 'system', content: 'Compare approved and rejected Instagram clothing bloggers and propose an improved criteria version. Return only JSON. All regex patterns must use JavaScript syntax without inline flags such as (?i); matching is already case-insensitive.' },
     { role: 'user', content: JSON.stringify({ current: { checklist_markdown: criteria.checklist_markdown, search_queries: criteria.search_queries, transcript_rules: criteria.transcript_rules }, samples, output: { checklist_markdown: 'string', search_queries: ['string'], transcript_rules: { noisePatterns: ['regex'], lowValuePatterns: ['regex'], minCharacters: 12, minWords: 3 }, diff_summary: 'string' } }) }
   ];
   const started = Date.now();
   try {
     const result = await llm.proposeCriteria(messages, { signal: context.signal });
-    validateTranscriptRules(result.parsed.transcript_rules);
+    const proposal = {
+      ...result.parsed,
+      transcript_rules: normalizeTranscriptRules(result.parsed.transcript_rules)
+    };
+    validateTranscriptRules(proposal.transcript_rules);
     await withTransaction(pool, async (client) => {
       const log = await client.query(`
         insert into llm_logs(purpose,job_id,criteria_version_id,base_url,model,request_messages,raw_response,parsed_response,
           prompt_tokens,completion_tokens,latency_ms,status)
         values ('criteria_proposal',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'succeeded') returning id
-      `, [job.id,criteria.id,config.LLM_BASE_URL,config.LLM_MODEL,JSON.stringify(messages),result.rawResponse,result.parsed,result.usage.prompt_tokens || null,result.usage.completion_tokens || null,result.meta.durationMs]);
+      `, [job.id,criteria.id,config.LLM_BASE_URL,config.LLM_MODEL,JSON.stringify(messages),result.rawResponse,proposal,result.usage.prompt_tokens || null,result.usage.completion_tokens || null,result.meta.durationMs]);
       await createCriteriaDraft(client, {
-        checklistMarkdown: result.parsed.checklist_markdown,
-        searchQueries: result.parsed.search_queries,
-        transcriptRules: result.parsed.transcript_rules,
+        checklistMarkdown: proposal.checklist_markdown,
+        searchQueries: proposal.search_queries,
+        transcriptRules: proposal.transcript_rules,
         source: 'llm',
         parentVersionId: criteria.id,
-        diffSummary: `${result.parsed.diff_summary} (LLM log ${log.rows[0].id})`,
+        diffSummary: `${proposal.diff_summary} (LLM log ${log.rows[0].id})`,
         sourceJobId: job.id
       });
     });
     return { proposed: true };
   } catch (error) {
     await saveFailedLlmLog(context, { purpose: 'criteria_proposal', jobId: job.id, criteria, messages, error, started });
+    throw error;
+  }
+}
+
+async function handleOutreachDraft(context, job) {
+  const { pool, llm, config } = context;
+  const completed = await pool.query(`
+    select message_text,personalization_reason from outreach_proposals where job_id=$1 limit 1
+  `, [job.id]);
+  if (completed.rowCount) return { ...completed.rows[0], cached: true };
+
+  const account = (await pool.query(`
+    select a.id,a.username,a.lifecycle_status,row_to_json(p.*) as profile
+    from instagram_accounts a
+    left join account_profiles p on p.account_id=a.id
+    where a.id=$1
+  `, [job.account_id])).rows[0];
+  if (!account) throw new Error('Account not found');
+  if (account.lifecycle_status !== 'approved') throw new Error('Account is no longer approved');
+
+  const evaluation = (await pool.query(`
+    select recommendation,confidence,positive_signals,negative_signals,explanation
+    from evaluations where account_id=$1 order by created_at desc limit 1
+  `, [job.account_id])).rows[0];
+  const reels = (await pool.query(`
+    select caption,transcript_text,transcript_quality,play_count,like_count,comment_count,published_at
+    from reels where account_id=$1
+    order by (transcript_quality='useful') desc,published_at desc nulls last limit 10
+  `, [job.account_id])).rows;
+  if (!evaluation) throw new Error('Approved account has no evaluation');
+
+  const messages = [
+    {
+      role: 'system',
+      content: 'Ты пишешь личные сообщения российским Instagram-блогерам от бренда одежды. Подготовь тёплое, уважительное и короткое предложение о бартерном сотрудничестве на русском языке. Укажи 1–2 конкретные причины интереса, подтверждённые входными данными. Не выдумывай имя, факты, условия, ассортимент, вознаграждение или обещания. Не утверждай, что видел контент, если во входных данных нет подходящего примера. Не добавляй тему письма. Верни только JSON.'
+    },
+    {
+      role: 'user',
+      content: JSON.stringify({
+        account: { username: account.username, profile: account.profile },
+        evaluation,
+        recent_content: reels,
+        task: 'Предложить обсудить бартерное сотрудничество. Текст должен звучать как живое персональное сообщение, а не массовая рассылка. Завершить мягким вопросом, интересно ли узнать детали.',
+        output: {
+          message_text: 'готовый текст обращения, 300–900 символов',
+          personalization_reason: 'краткое внутреннее обоснование для администратора: почему обращаемся именно к этому блогеру и на каких фактах основана персонализация'
+        }
+      })
+    }
+  ];
+  const started = Date.now();
+  try {
+    const result = await llm.draftOutreach(messages, { signal: context.signal });
+    await withTransaction(pool, async (client) => {
+      const current = await client.query('select lifecycle_status from instagram_accounts where id=$1 for update', [job.account_id]);
+      if (current.rows[0]?.lifecycle_status !== 'approved') throw new Error('Account is no longer approved');
+      const log = await client.query(`
+        insert into llm_logs(purpose,job_id,account_id,base_url,model,request_messages,raw_response,parsed_response,
+          prompt_tokens,completion_tokens,latency_ms,status)
+        values ('outreach_proposal',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'succeeded') returning id
+      `, [job.id,job.account_id,config.LLM_BASE_URL,config.LLM_MODEL,JSON.stringify(messages),result.rawResponse,result.parsed,result.usage.prompt_tokens || null,result.usage.completion_tokens || null,result.meta.durationMs]);
+      await client.query(`
+        insert into outreach_proposals(account_id,job_id,llm_log_id,message_text,personalization_reason)
+        values ($1,$2,$3,$4,$5)
+      `, [job.account_id,job.id,log.rows[0].id,result.parsed.message_text,result.parsed.personalization_reason]);
+    });
+    return result.parsed;
+  } catch (error) {
+    await saveFailedLlmLog(context, {
+      purpose: 'outreach_proposal', jobId: job.id, accountId: job.account_id,
+      messages, error, started
+    });
     throw error;
   }
 }
@@ -312,7 +388,8 @@ export function createJobHandlers(context) {
     fetch_transcript: (job) => handleTranscript(context, job),
     classify_transcript: (job) => handleClassify(context, job),
     evaluate_candidate: (job) => handleEvaluation(context, job),
-    propose_criteria: (job) => handleCriteriaProposal(context, job)
+    propose_criteria: (job) => handleCriteriaProposal(context, job),
+    draft_outreach: (job) => handleOutreachDraft(context, job)
   };
 }
 

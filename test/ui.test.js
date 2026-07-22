@@ -10,15 +10,53 @@ const views = path.resolve(testDir, '../src/views');
 test('candidate page explains discovery and hides the discovery run table', async () => {
   const html = await ejs.renderFile(path.join(views, 'accounts.ejs'), {
     title: 'Candidates', locale: 'ru', csrfToken: 'csrf-token', active: 'candidates',
-    t: (key) => key, mode: 'candidates', accounts: [], query: {},
+    t: (key) => key, mode: 'candidates', accounts: [], query: {}, aiSearchQueries: [],
     config: { DISCOVERY_MAX_LIMIT: 50, DISCOVERY_DEFAULT_LIMIT: 5 }
   });
 
   assert.match(html, /Поиск новых блогеров/);
-  assert.match(html, /Что искать в Instagram/);
+  assert.match(html, /Поисковый запрос/);
   assert.match(html, /Предложить запрос через ИИ/);
   assert.match(html, /\/discovery-query-suggestions/);
   assert.doesNotMatch(html, /Discovery runs|fashion moscow|\/ui\/discovery-runs/);
+});
+
+test('approved blogger drawer presents personalized outreach for human approval', async () => {
+  const html = await ejs.renderFile(path.join(views, 'partials/account-drawer.ejs'), {
+    locale: 'ru', csrfToken: 'csrf-token', t: (key) => key,
+    config: { REELS_MAX_LIMIT: 20, REELS_DEFAULT_LIMIT: 5 },
+    account: {
+      id: 7, username: 'warm_creator', lifecycle_status: 'approved', instagram_url: 'https://instagram.com/warm_creator',
+      avatar_url: null, display_name: 'Creator', bio: 'Style', followers: 1000, reels_count: 1,
+      useful_reels_count: 1, recommendation: 'recommended_approve', confidence: 90, explanation: 'Fits'
+    },
+    reels: [], audit: [], jobs: [{ id: 12, job_type: 'draft_outreach', status: 'succeeded', created_at: new Date() }],
+    outreach: [{
+      id: 3, job_id: 12, status: 'draft', message_text: 'Тёплое персональное предложение',
+      personalization_reason: 'Подходит стиль и формат контента.'
+    }]
+  });
+  assert.match(html, /Почему пишем именно этому блогеру/);
+  assert.match(html, /Тёплое персональное предложение/);
+  assert.match(html, /Утвердить этот текст/);
+  assert.match(html, /\/outreach\/3\/approve/);
+});
+
+test('approved blogger drawer polls while outreach generation is active', async () => {
+  const html = await ejs.renderFile(path.join(views, 'partials/account-drawer.ejs'), {
+    locale: 'ru', csrfToken: 'csrf-token', t: (key) => key,
+    config: { REELS_MAX_LIMIT: 20, REELS_DEFAULT_LIMIT: 5 },
+    account: {
+      id: 8, username: 'pending_creator', lifecycle_status: 'approved', instagram_url: 'https://instagram.com/pending_creator',
+      avatar_url: null, display_name: null, bio: null, followers: null, reels_count: 0,
+      useful_reels_count: 0, recommendation: 'recommended_approve', confidence: 80, explanation: 'Fits'
+    },
+    reels: [], audit: [], outreach: [],
+    jobs: [{ id: 13, job_type: 'draft_outreach', status: 'running', created_at: new Date() }]
+  });
+  assert.match(html, /hx-get="\/ui\/accounts\/8"/);
+  assert.match(html, /hx-trigger="every 2s"/);
+  assert.match(html, /обновится автоматически/);
 });
 
 test('LLM query suggestion polls safely and exposes generated choices', async () => {
@@ -34,7 +72,6 @@ test('LLM query suggestion polls safely and exposes generated choices', async ()
     queries: ['fashion & style "moscow"', 'wildberries looks'],
     csrfToken: 'csrf-token'
   });
-  assert.match(completed, /data-discovery-query-default="fashion &amp; style &#34;moscow&#34;"/);
-  assert.match(completed, /data-discovery-query="wildberries looks"/);
+  assert.match(completed, /Запрос готов/);
   assert.doesNotMatch(completed, /hx-trigger="every 2s"/);
 });
