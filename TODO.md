@@ -14,7 +14,7 @@
 - [x] Поднимать в списке кандидатов `needs_manual_review`, затем оценки с confidence ближе к 50.
 - [x] Добавить versioned-настройки автоматики и текущий расход дневного бюджета в Settings.
 - [x] Прогнать 67/67 default-тестов и 41/41 PostgreSQL integration-тестов на чистой schema v2.
-- [ ] Развернуть schema-compatible release `0.2.2` и проверить созданные scheduler jobs, readiness и соседние сервисы.
+- [x] Развернуть schema-compatible release `0.2.2` и проверить созданные scheduler jobs, readiness и соседние сервисы.
 
 ## Редактируемые промпты LLM — 2026-07-22
 

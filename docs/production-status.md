@@ -7,7 +7,7 @@ Last verified: 2026-07-22.
 - Public URL: `https://insta.podedu.ru`
 - Server directory: `/opt/instagram-hunter`
 - Compose project: `insta_hunter`
-- Application image: `instagram-hunter:0.2.1`
+- Application image: `instagram-hunter:0.2.2`
 - Active database: `instagram_hunter_v2`, complete schema version `2`.
 - Web binding: `127.0.0.1:13002`; public traffic terminates at the system Nginx.
 - TLS certificate is managed by Certbot and is valid through 2026-10-19.
@@ -113,6 +113,18 @@ This is a schema-compatible release. Prompts are stored inside the existing `cri
 Syntax and default/UI tests passed 64/64, the disposable PostgreSQL 16 suite passed 37/37 on clean schema v2, and `npm audit --omit=dev --audit-level=high` found no known vulnerabilities. The server build repeated the 64-test gate. Pre-deployment backup: `instagram_hunter_20260722T090256Z.dump`.
 
 After rollout, schema check reports expected and actual version `2`; public and local readiness return `ready`; `/login` returns HTTP 200; web and worker are healthy on `instagram-hunter:0.2.1`. `checkit` remains healthy and `million-items-postgres` remains stopped. Temporary release archives and build directories were removed. Image `0.2.0` and the established `0.2.0` rollback assets remain available.
+
+## Deployment 0.2.2
+
+Release commit `7b523e64f57e0999c51c50acdf9cf66380b79b70` was pushed to `origin/master`. The release archive SHA-256 was `40aef19f8876c2cb6aecfd570c34512c69f79773bd298b3d51f9ef3fc890f49d`; the immutable image ID is `sha256:fa50f72fbe0b90e5b0bf40f39b124e941b536e7512f7cb97e26eccba64157e35`. Pre-deployment backup: `instagram_hunter_20260722T094006Z.dump`.
+
+This schema-compatible release adds the five-minute scheduler, threshold/24-hour LLM criteria drafts, versioned automation settings, a global daily discovery budget, query/job deduplication and uncertainty-first candidate ordering. LLM criteria now include an explicit selection model, and immutable system instructions treat all social/profile/rejection text as untrusted data to reduce prompt-injection risk.
+
+Syntax/default/UI tests passed 67/67 and the isolated PostgreSQL 16 suite passed 41/41 against clean schema v2. The server build repeated the 67-test gate; the production dependency audit found no known vulnerabilities.
+
+The first production scheduler cycle correctly found no new decisions for a criteria draft and queued four low-priority discovery jobs for the configured daily budget of 20 accounts. Three queries succeeded, including two after bounded retry. SocialCrawl currently reports zero credits, so queries for which ScrapCreators returns no result cannot use that fallback; this is an external account limitation, not a scheduler failure.
+
+Schema compatibility, local/public readiness, login and worker heartbeat passed. Web and worker are healthy on `instagram-hunter:0.2.2`; `checkit` remains healthy and `million-items-postgres` remains stopped. Temporary release files were removed.
 
 ## Next operational action
 
