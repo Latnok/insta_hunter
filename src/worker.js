@@ -8,6 +8,7 @@ import { createLlmClient } from './providers/llm.js';
 import { createJobHandlers } from './jobs/handlers.js';
 import { runWorkerSlot } from './jobs/runner.js';
 import { createLogger } from './lib/logger.js';
+import { runAutomationCycle } from './services/automation.js';
 
 const config = loadConfig();
 const logger = createLogger('worker');
@@ -35,6 +36,22 @@ const heartbeatTimer = setInterval(() => {
     .catch((error) => logger.error({ err: error }, 'worker heartbeat failed'));
 }, 15_000);
 heartbeatTimer.unref();
+let automationBusy = false;
+async function runScheduledAutomation() {
+  if (stopping || automationBusy) return;
+  automationBusy = true;
+  try {
+    const result = await runAutomationCycle(pool, config);
+    if (result.criteria.queued || result.discovery.queued) logger.info({ automation: result }, 'automation work queued');
+  } catch (error) {
+    logger.error({ err: error }, 'automation cycle failed');
+  } finally {
+    automationBusy = false;
+  }
+}
+const automationTimer = setInterval(runScheduledAutomation, 5 * 60_000);
+automationTimer.unref();
+await runScheduledAutomation();
 
 async function superviseSlot(slot) {
   const slotWorkerId = `${workerId}:slot:${slot}`;
@@ -60,6 +77,7 @@ async function shutdown(signal) {
   stopping = true;
   shutdownController.abort(new DOMException(`Worker received ${signal}`, 'AbortError'));
   clearInterval(heartbeatTimer);
+  clearInterval(automationTimer);
   logger.info({ signal }, 'worker stopping');
   await Promise.allSettled(loops);
   await pool.query('delete from worker_heartbeats where worker_id=$1 or worker_id like $2', [workerId, `${workerId}:slot:%`]).catch(() => {});

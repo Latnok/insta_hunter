@@ -88,7 +88,12 @@ test('settings exposes both active LLM prompts as editable draft fields', async 
       }
     }],
     llmLogs: [],
-    llmPrompts: { candidateEvaluation: 'ANALYSIS PROMPT', outreachProposal: 'OUTREACH PROMPT' }
+    llmPrompts: { candidateEvaluation: 'ANALYSIS PROMPT', outreachProposal: 'OUTREACH PROMPT' },
+    criteriaAutomation: {
+      criteriaEnabled: true, decisionThreshold: 10, refreshHours: 24,
+      discoveryEnabled: true, dailyDiscoveryLimit: 20, perQueryLimit: 5
+    },
+    automationStatus: { discovery_used_today: 5, pending_criteria_jobs: 1, last_discovery_at: now }
   });
   assert.match(html, /Промпты LLM/);
   assert.match(html, /name="candidateEvaluation"/);
@@ -99,4 +104,9 @@ test('settings exposes both active LLM prompts as editable draft fields', async 
   assert.match(html, /нажмите Activate/);
   assert.match(html, /активной версии v7/);
   assert.match(html, /Промпты этой версии/);
+  assert.match(html, /Автоматизация поиска/);
+  assert.match(html, /name="decisionThreshold"/);
+  assert.match(html, /name="dailyDiscoveryLimit"/);
+  assert.match(html, /Сохранить настройки как draft/);
+  assert.match(html, /5 из 20/);
 });

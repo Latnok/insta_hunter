@@ -11,7 +11,17 @@ export const evaluationSchema = z.object({
 
 export const criteriaSchema = z.object({
   checklist_markdown: z.string().min(1),
-  search_queries: z.array(z.string().min(1)).max(100),
+  search_queries: z.array(z.string().min(1)).min(1).max(100),
+  selection_model: z.object({
+    ideal_profile: z.string().min(1).max(4000),
+    required_signals: z.array(z.string().min(1)).max(30),
+    preferred_signals: z.array(z.string().min(1)).max(30),
+    exclusion_signals: z.array(z.string().min(1)).max(30),
+    scoring_weights: z.array(z.object({
+      criterion: z.string().min(1).max(500),
+      weight: z.number().int().min(-100).max(100)
+    })).max(50)
+  }),
   transcript_rules: z.object({
     noisePatterns: z.array(z.string()), lowValuePatterns: z.array(z.string()),
     minCharacters: z.number().int().min(1), minWords: z.number().int().min(1)

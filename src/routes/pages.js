@@ -3,6 +3,7 @@ import { getAccount, listAccountReels, listAccounts, listReels } from '../db/rep
 import { listJobs } from '../db/repositories/jobs.js';
 import { jobStatuses, jobTypes, parseListQuery, transcriptQualities } from '../domain/query.js';
 import { resolveLlmPrompts } from '../domain/llm-prompts.js';
+import { resolveCriteriaAutomation } from '../domain/criteria-automation.js';
 
 const pageSize = 24;
 
@@ -13,7 +14,7 @@ export function createPageRouter({ pool, config }) {
   router.get('/candidates', async (req, res) => {
     const query = parseListQuery(req.query, { statuses: ['candidate', 'rejected'] });
     const statuses = query.status === 'rejected' ? ['rejected'] : ['candidate'];
-    const accounts = await listAccounts(pool, { statuses, search: query.search, limit: pageSize, offset: query.offset });
+    const accounts = await listAccounts(pool, { statuses, search: query.search, prioritizeUncertain: true, limit: pageSize, offset: query.offset });
     accounts.forEach((account) => { account.is_stale = !account.profile_fetched_at || Date.now() - new Date(account.profile_fetched_at).getTime() >= config.freshnessMs; });
     const latestSuggestion = await pool.query(`
       select search_queries from criteria_versions
@@ -49,7 +50,17 @@ export function createPageRouter({ pool, config }) {
     const logs = await pool.query('select * from llm_logs order by created_at desc limit 30');
     const activeCriteria = result.rows.find((item) => item.status === 'active');
     const llmPrompts = resolveLlmPrompts(activeCriteria?.transcript_rules);
-    res.render('settings', { title: req.t('settings'), active: 'settings', criteria: result.rows, llmLogs: logs.rows, llmPrompts });
+    const criteriaAutomation = resolveCriteriaAutomation(activeCriteria?.transcript_rules);
+    const automationStatus = (await pool.query(`
+      select
+        coalesce((select sum(requested_limit)::int from discovery_runs where created_by='automation' and created_at >= date_trunc('day',now())),0) as discovery_used_today,
+        (select max(created_at) from discovery_runs where created_by='automation') as last_discovery_at,
+        (select count(*)::int from jobs where job_type='propose_criteria' and payload->>'trigger' like 'automatic_%' and status in ('pending','running','retry_wait')) as pending_criteria_jobs
+    `)).rows[0];
+    res.render('settings', {
+      title: req.t('settings'), active: 'settings', criteria: result.rows, llmLogs: logs.rows,
+      llmPrompts, criteriaAutomation, automationStatus
+    });
   });
 
   router.get('/ui/discovery-query-suggestions/:jobId', async (req, res) => {

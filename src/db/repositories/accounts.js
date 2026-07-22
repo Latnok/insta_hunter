@@ -42,7 +42,7 @@ export async function getAccount(client, id) {
   return result.rows[0] || null;
 }
 
-export async function listAccounts(client, { statuses, search, limit = 24, offset = 0 }) {
+export async function listAccounts(client, { statuses, search, prioritizeUncertain = false, limit = 24, offset = 0 }) {
   const params = [statuses, limit, offset];
   let searchSql = '';
   if (search) {
@@ -68,7 +68,10 @@ export async function listAccounts(client, { statuses, search, limit = 24, offse
       select status from pipeline_runs where account_id = a.id order by created_at desc limit 1
     ) pr on true
     where a.lifecycle_status = any($1::text[]) ${searchSql}
-    order by a.updated_at desc, a.id desc
+    order by
+      ${prioritizeUncertain ? `case when e.recommendation='needs_manual_review' then 0 when e.confidence is not null then 1 else 2 end,
+      case when e.confidence is not null then abs(e.confidence - 50) else 101 end,` : ''}
+      a.updated_at desc, a.id desc
     limit $2 offset $3
   `, params);
   return result.rows;

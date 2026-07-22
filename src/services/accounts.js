@@ -4,6 +4,7 @@ import { assertTransition } from '../domain/accounts.js';
 import { startPipeline } from './pipelines.js';
 import { cancelAccountWork } from './jobs.js';
 import { enqueueJob } from '../db/repositories/jobs.js';
+import { scheduleCriteriaProposalIfDue } from './automation.js';
 
 export async function addManualAccount(pool, config, input, sourceNote = null) {
   const account = await withTransaction(pool, (client) => upsertAccount(client, {
@@ -18,7 +19,7 @@ export async function addManualAccount(pool, config, input, sourceNote = null) {
   return { account, pipeline };
 }
 
-async function transition(pool, { accountId, to, reason, requestMeta = {}, maxAttempts = 3, draftOutreach = false }) {
+async function transition(pool, { accountId, to, reason, requestMeta = {}, maxAttempts = 3, draftOutreach = false, config = {} }) {
   return withTransaction(pool, async (client) => {
     const result = await client.query('select * from instagram_accounts where id=$1 for update', [accountId]);
     const account = result.rows[0];
@@ -54,13 +55,16 @@ async function transition(pool, { accountId, to, reason, requestMeta = {}, maxAt
       insert into audit_events(action, entity_type, entity_id, old_values, new_values, reason, request_ip, user_agent)
       values ($1,'instagram_account',$2,$3,$4,$5,$6,$7)
     `, [to, accountId, account, updated.rows[0], reason || null, requestMeta.ip || null, requestMeta.userAgent || null]);
+    if (account.lifecycle_status === 'candidate' && (to === 'approved' || to === 'rejected')) {
+      await scheduleCriteriaProposalIfDue(client, config);
+    }
     return updated.rows[0];
   });
 }
 
 export const approveAccount = (pool, accountId, requestMeta, config = {}) => transition(pool, {
-  accountId, to: 'approved', requestMeta, draftOutreach: true, maxAttempts: config.JOB_MAX_ATTEMPTS || 3
+  accountId, to: 'approved', requestMeta, draftOutreach: true, maxAttempts: config.JOB_MAX_ATTEMPTS || 3, config
 });
-export const rejectAccount = (pool, accountId, reason, requestMeta) => transition(pool, { accountId, to: 'rejected', reason, requestMeta });
+export const rejectAccount = (pool, accountId, reason, requestMeta, config = {}) => transition(pool, { accountId, to: 'rejected', reason, requestMeta, config });
 export const archiveAccount = (pool, accountId, reason, requestMeta) => transition(pool, { accountId, to: 'archived', reason, requestMeta });
 export const restoreAccount = (pool, accountId, requestMeta) => transition(pool, { accountId, to: 'approved', requestMeta });

@@ -108,6 +108,27 @@
   white-space: pre-wrap;
 }
 
+.automation-editor {
+  margin-bottom: 18px;
+}
+
+.automation-editor h2,
+.automation-editor p {
+  margin: 0;
+}
+
+.automation-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 720px) {
+  .automation-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .outreach-section h3,
 .outreach-section p {
   margin: 0;

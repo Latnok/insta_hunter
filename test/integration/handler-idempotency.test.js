@@ -276,6 +276,10 @@ integration('job handler idempotency after worker restart', () => {
         return {
           parsed: {
             checklist_markdown: 'proposed criteria', search_queries: ['clothing'],
+            selection_model: {
+              ideal_profile: 'Clothing reviewer', required_signals: ['clothing'], preferred_signals: ['reviews'],
+              exclusion_signals: ['unrelated'], scoring_weights: [{ criterion: 'clothing focus', weight: 50 }]
+            },
             transcript_rules: { noisePatterns: ['(?i)dimatorzok'], lowValuePatterns: [], minCharacters: 12, minWords: 3 },
             diff_summary: 'fixture change'
           },
@@ -298,6 +302,8 @@ integration('job handler idempotency after worker restart', () => {
     assert.deepEqual(stored.rows[0].transcript_rules.llmPrompts, {
       candidateEvaluation: 'preserved analysis', outreachProposal: 'preserved outreach'
     });
+    assert.equal(stored.rows[0].transcript_rules.selectionModel.ideal_profile, 'Clothing reviewer');
+    assert.equal(stored.rows[0].transcript_rules.criteriaAutomation.decisionThreshold, 10);
   });
 
   test('repeated outreach job stores one approval draft without another LLM call', async () => {

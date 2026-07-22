@@ -225,6 +225,47 @@ integration('authentication and request security', () => {
     if (insertedCriteria.rowCount) await pool.query('delete from criteria_versions where id=$1', [insertedCriteria.rows[0].id]);
   });
 
+  test('automation settings are validated and saved as an inactive criteria draft', async () => {
+    const insertedCriteria = await pool.query(`
+      insert into criteria_versions(version_number,checklist_markdown,search_queries,transcript_rules,status,source)
+      select coalesce(max(version_number),0)+1,'automation criteria','["fashion"]','{}','active','manual'
+      from criteria_versions where not exists(select 1 from criteria_versions where status='active')
+      returning id
+    `);
+    const active = (await pool.query(`select * from criteria_versions where status='active' limit 1`)).rows[0];
+    const app = createApp({ config: config(), pool, logger });
+    const agent = request.agent(app);
+    const loginPage = await agent.get('/login').expect(200);
+    await agent.post('/auth/login').type('form').send({
+      _csrf: csrfFrom(loginPage), username: 'admin', password
+    }).expect(302);
+    const settingsPage = await agent.get('/settings').expect(200);
+    const csrf = csrfFrom(settingsPage);
+
+    await agent.post('/automation/drafts').type('form').send({
+      _csrf: csrf, criteriaEnabled: 'on', decisionThreshold: 5, refreshHours: 12,
+      discoveryEnabled: 'on', dailyDiscoveryLimit: 30, perQueryLimit: 6
+    }).expect(303).expect('Location', '/settings');
+    const draft = (await pool.query(`
+      select * from criteria_versions
+      where parent_version_id=$1 and diff_summary='Criteria automation settings updated'
+      order by version_number desc limit 1
+    `, [active.id])).rows[0];
+    assert.deepEqual(draft.transcript_rules.criteriaAutomation, {
+      criteriaEnabled: true, decisionThreshold: 5, refreshHours: 12,
+      discoveryEnabled: true, dailyDiscoveryLimit: 30, perQueryLimit: 6
+    });
+    assert.equal(draft.status, 'draft');
+
+    await agent.post('/automation/drafts').type('form').send({
+      _csrf: csrf, decisionThreshold: 0, refreshHours: 12,
+      dailyDiscoveryLimit: 30, perQueryLimit: 6
+    }).expect(400);
+
+    await pool.query('delete from criteria_versions where id=$1', [draft.id]);
+    if (insertedCriteria.rowCount) await pool.query('delete from criteria_versions where id=$1', [insertedCriteria.rows[0].id]);
+  });
+
   test('login is throttled by IP address', async () => {
     const app = createApp({ config: config(), pool, logger });
     const initial = await request(app).get('/login').expect(200);

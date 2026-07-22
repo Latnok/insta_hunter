@@ -12,7 +12,15 @@ test('validates candidate evaluation schema', () => {
 });
 
 test('validates criteria proposal schema', () => {
-  assert.doesNotThrow(() => criteriaSchema.parse({ checklist_markdown: '# Criteria', search_queries: ['fashion'], transcript_rules: { noisePatterns: [], lowValuePatterns: [], minCharacters: 12, minWords: 3 }, diff_summary: 'Updated' }));
+  assert.doesNotThrow(() => criteriaSchema.parse({
+    checklist_markdown: '# Criteria', search_queries: ['fashion'],
+    selection_model: {
+      ideal_profile: 'Clothing reviewer', required_signals: ['clothing'], preferred_signals: ['reviews'],
+      exclusion_signals: ['unrelated'], scoring_weights: [{ criterion: 'clothing focus', weight: 50 }]
+    },
+    transcript_rules: { noisePatterns: [], lowValuePatterns: [], minCharacters: 12, minWords: 3 },
+    diff_summary: 'Updated'
+  }));
 });
 
 test('validates personalized outreach schema', () => {

@@ -7,11 +7,12 @@ import { commitCsv, previewCsv } from '../services/imports.js';
 import { startPipeline } from '../services/pipelines.js';
 import { validateTranscriptRules } from '../domain/transcripts.js';
 import { withTransaction } from '../db/pool.js';
-import { enqueueJob } from '../db/repositories/jobs.js';
 import { cancelJob, retryJob } from '../services/jobs.js';
 import { createCriteriaDraft, criteriaWriteLockKey } from '../services/criteria.js';
 import { decideOutreachDraft, regenerateOutreachDraft, saveOutreachDraft } from '../services/outreach.js';
 import { validateLlmPrompts, withLlmPrompts } from '../domain/llm-prompts.js';
+import { validateCriteriaAutomation, withCriteriaAutomation } from '../domain/criteria-automation.js';
+import { enqueueCriteriaProposal as enqueueCriteriaProposalJob } from '../services/automation.js';
 
 function back(res, fallback = '/candidates') {
   res.set('HX-Redirect', fallback);
@@ -26,10 +27,9 @@ async function enqueueCriteriaProposal(pool, config) {
   return withTransaction(pool, async (client) => {
     const active = await client.query(`select id from criteria_versions where status='active' limit 1`);
     if (!active.rowCount) throw Object.assign(new Error('Active criteria not found'), { statusCode: 409 });
-    return enqueueJob(client, {
-      jobType: 'propose_criteria', payload: { criteriaVersionId: active.rows[0].id },
-      dedupeKey: `criteria-proposal:${active.rows[0].id}:${Date.now()}:${crypto.randomUUID()}`,
-      maxAttempts: config.JOB_MAX_ATTEMPTS
+    return enqueueCriteriaProposalJob(client, config, {
+      criteriaVersionId: active.rows[0].id, trigger: 'manual',
+      dedupeKey: `criteria-proposal:${active.rows[0].id}:${Date.now()}:${crypto.randomUUID()}`
     });
   });
 }
@@ -124,7 +124,7 @@ export function createActionRouter({ pool, config }) {
   });
 
   router.post('/accounts/:id/approve', async (req, res) => { await approveAccount(pool, req.params.id, requestMeta(req), config); return back(res); });
-  router.post('/accounts/:id/reject', async (req, res) => { await rejectAccount(pool, req.params.id, req.body.reason || null, requestMeta(req)); return back(res); });
+  router.post('/accounts/:id/reject', async (req, res) => { await rejectAccount(pool, req.params.id, req.body.reason || null, requestMeta(req), config); return back(res); });
   router.post('/accounts/:id/archive', async (req, res) => { await archiveAccount(pool, req.params.id, req.body.reason || null, requestMeta(req)); return back(res, '/bloggers'); });
   router.post('/accounts/:id/restore', async (req, res) => { await restoreAccount(pool, req.params.id, requestMeta(req)); return back(res, '/bloggers?status=archived'); });
 
@@ -201,6 +201,36 @@ export function createActionRouter({ pool, config }) {
         source: 'manual',
         parentVersionId: active.id,
         diffSummary: 'LLM prompts updated'
+      });
+    });
+    return back(res, '/settings');
+  });
+
+  router.post('/automation/drafts', async (req, res) => {
+    let settings;
+    try {
+      settings = validateCriteriaAutomation({
+        criteriaEnabled: req.body.criteriaEnabled === 'on',
+        decisionThreshold: Number(req.body.decisionThreshold),
+        refreshHours: Number(req.body.refreshHours),
+        discoveryEnabled: req.body.discoveryEnabled === 'on',
+        dailyDiscoveryLimit: Number(req.body.dailyDiscoveryLimit),
+        perQueryLimit: Number(req.body.perQueryLimit)
+      });
+    } catch (error) {
+      throw Object.assign(new Error(`Invalid automation settings: ${error.message}`), { statusCode: 400 });
+    }
+    await withTransaction(pool, async (client) => {
+      await client.query('select pg_advisory_xact_lock($1)', [criteriaWriteLockKey]);
+      const active = (await client.query(`select * from criteria_versions where status='active' limit 1`)).rows[0];
+      if (!active) throw Object.assign(new Error('Active criteria not found'), { statusCode: 409 });
+      await createCriteriaDraft(client, {
+        checklistMarkdown: active.checklist_markdown,
+        searchQueries: active.search_queries,
+        transcriptRules: withCriteriaAutomation(active.transcript_rules, settings),
+        source: 'manual',
+        parentVersionId: active.id,
+        diffSummary: 'Criteria automation settings updated'
       });
     });
     return back(res, '/settings');

@@ -9,7 +9,7 @@ import {
   initializeSchema
 } from '../../src/db/schema.js';
 import { withTransaction } from '../../src/db/pool.js';
-import { upsertAccount } from '../../src/db/repositories/accounts.js';
+import { listAccounts, upsertAccount } from '../../src/db/repositories/accounts.js';
 import { completeJob, enqueueJob, reserveJob } from '../../src/db/repositories/jobs.js';
 import {
   approveAccount,
@@ -20,6 +20,7 @@ import {
 import { commitCsv } from '../../src/services/imports.js';
 import { createCriteriaDraft } from '../../src/services/criteria.js';
 import { decideOutreachDraft, regenerateOutreachDraft, saveOutreachDraft } from '../../src/services/outreach.js';
+import { runAutomationCycle } from '../../src/services/automation.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const integration = databaseUrl ? describe : describe.skip;
@@ -269,6 +270,85 @@ integration('PostgreSQL repositories, constraints and lifecycle transitions', ()
       [account.id]
     );
     assert.deepEqual(audit.rows.map((row) => row.action), ['approved', 'archived', 'approved']);
+  });
+
+  test('decision threshold queues one low-priority automatic criteria proposal', async () => {
+    const automation = {
+      criteriaEnabled: true, decisionThreshold: 2, refreshHours: 168,
+      discoveryEnabled: false, dailyDiscoveryLimit: 20, perQueryLimit: 5
+    };
+    await pool.query(`
+      insert into criteria_versions(version_number,checklist_markdown,search_queries,transcript_rules,status,source)
+      values (1,'criteria','["fashion"]',$1,'active','manual')
+    `, [{ criteriaAutomation: automation }]);
+    const first = await insertAccount('auto_reject_one');
+    const second = await insertAccount('auto_reject_two');
+    const config = { JOB_MAX_ATTEMPTS: 3 };
+
+    await rejectAccount(pool, first.id, 'not relevant', {}, config);
+    assert.equal((await pool.query("select count(*)::int as count from jobs where job_type='propose_criteria'")).rows[0].count, 0);
+    await rejectAccount(pool, second.id, 'not relevant', {}, config);
+
+    const jobs = await pool.query("select priority,payload from jobs where job_type='propose_criteria'");
+    assert.equal(jobs.rowCount, 1);
+    assert.equal(jobs.rows[0].priority, -5);
+    assert.equal(jobs.rows[0].payload.trigger, 'automatic_threshold');
+    assert.equal(jobs.rows[0].payload.decisionCount, 2);
+  });
+
+  test('automation cycle respects unique queries and the global daily discovery budget', async () => {
+    const automation = {
+      criteriaEnabled: false, decisionThreshold: 10, refreshHours: 24,
+      discoveryEnabled: true, dailyDiscoveryLimit: 7, perQueryLimit: 3
+    };
+    await pool.query(`
+      insert into criteria_versions(version_number,checklist_markdown,search_queries,transcript_rules,status,source)
+      values (1,'criteria',$1,$2,'active','manual')
+    `, [JSON.stringify(['Fashion Moscow', 'fashion moscow', 'Обзоры одежды', 'стиль']), { criteriaAutomation: automation }]);
+    const config = { JOB_MAX_ATTEMPTS: 3, DISCOVERY_DEFAULT_LIMIT: 5, DISCOVERY_MAX_LIMIT: 100 };
+
+    const first = await runAutomationCycle(pool, config);
+    const second = await runAutomationCycle(pool, config);
+    assert.equal(first.discovery.queued, 3);
+    assert.equal(second.discovery.queued, 0);
+    assert.equal(second.discovery.reason, 'daily_limit');
+
+    const runs = await pool.query('select query,requested_limit,created_by from discovery_runs order by id');
+    assert.deepEqual(runs.rows, [
+      { query: 'Fashion Moscow', requested_limit: 3, created_by: 'automation' },
+      { query: 'Обзоры одежды', requested_limit: 3, created_by: 'automation' },
+      { query: 'стиль', requested_limit: 1, created_by: 'automation' }
+    ]);
+    const jobs = await pool.query("select priority from jobs where job_type='discover_accounts' order by id");
+    assert.ok(jobs.rows.every((row) => row.priority === -10));
+  });
+
+  test('candidate listing prioritizes uncertain evaluated accounts', async () => {
+    const criteria = (await pool.query(`
+      insert into criteria_versions(version_number,checklist_markdown,status,source)
+      values (1,'criteria','active','manual') returning id
+    `)).rows[0];
+    const manual = await insertAccount('manual_review_first');
+    const uncertain = await insertAccount('uncertain_second');
+    await insertAccount('not_evaluated_last');
+    for (const [account, recommendation, confidence] of [
+      [manual, 'needs_manual_review', 90], [uncertain, 'recommended_approve', 52]
+    ]) {
+      const log = (await pool.query(`
+        insert into llm_logs(purpose,account_id,criteria_version_id,base_url,model,request_messages,status)
+        values ('candidate_evaluation',$1,$2,'https://example.invalid','test','[]','succeeded') returning id
+      `, [account.id, criteria.id])).rows[0];
+      await pool.query(`
+        insert into evaluations(account_id,criteria_version_id,recommendation,confidence,explanation,llm_log_id)
+        values ($1,$2,$3,$4,'fixture',$5)
+      `, [account.id, criteria.id, recommendation, confidence, log.id]);
+    }
+    const accounts = await listAccounts(pool, {
+      statuses: ['candidate'], prioritizeUncertain: true, limit: 10, offset: 0
+    });
+    assert.deepEqual(accounts.map((account) => account.username), [
+      'manual_review_first', 'uncertain_second', 'not_evaluated_last'
+    ]);
   });
 
   test('outreach draft can be edited, approved and regenerated only for approved bloggers', async () => {
