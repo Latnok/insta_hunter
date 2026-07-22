@@ -66,6 +66,18 @@ The Git first-release baseline contains one complete `db/schema.sql` and no migr
 - After rollout, web and worker are healthy; `checkit` remains healthy and `million-items-postgres` remains stopped.
 - Root filesystem usage is approximately 95%, with about 2.1 GB free. Avoid server-side image builds and perform a separately approved Docker storage cleanup before the next large release.
 
+## Hermes test dataset import
+
+On 2026-07-22, parsed test data was copied read-only from `hermes-stack-postgres` into the active `instagram_hunter_v1` database. The import was rehearsed twice against a restored production backup before execution and is idempotent by normalized username plus reel media ID/shortcode.
+
+- Current totals: 41 accounts, 41 profiles and 58 reels.
+- Imported source payload: 34 detailed blogger profiles, 55 reels and five search-only candidates; two usernames already existed in Instagram Hunter.
+- Transcript totals: 31 useful, 26 noise and one low-value transcript. The noise total includes three reels that existed before the import.
+- Existing account lifecycle was preserved. A newer existing profile was not overwritten by an older Hermes snapshot.
+- The production transaction created one discovery-run provenance record and one audit event.
+- Post-import backup `instagram_hunter_20260722T055517Z.dump` has SHA-256 `9bc6a0a0c9b739e592d7b9a4dd1b3658d5181bbd59cc40ed2a71e533de6c4cd3`; it was restored successfully into an isolated temporary database and verified at schema version `1` with 41 accounts and 58 reels.
+- Temporary SQL/CSV files were removed from the host and both PostgreSQL containers. Hermes data and schema were not modified.
+
 ## Next operational action
 
 The OpenAI key was shared in chat. Rotate it in the OpenAI dashboard, update only `LLM_API_KEY` in `/opt/instagram-hunter/.env`, and recreate `web` and `worker`. Do not change the provider keys or other projects during that rotation.
