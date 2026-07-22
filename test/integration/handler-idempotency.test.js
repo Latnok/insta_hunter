@@ -13,6 +13,8 @@ integration('job handler idempotency after worker restart', () => {
   const pool = new pg.Pool({ connectionString: databaseUrl, max: 4 });
   const config = {
     freshnessMs: 3 * 24 * 60 * 60 * 1000,
+    REELS_DEFAULT_LIMIT: 3,
+    REELS_MAX_LIMIT: 20,
     JOB_MAX_ATTEMPTS: 3,
     LLM_BASE_URL: 'https://example.invalid/v1',
     LLM_MODEL: 'test-model'
@@ -97,8 +99,8 @@ integration('job handler idempotency after worker restart', () => {
     const handler = createJobHandlers({ pool, instagram, config }).discover_accounts;
 
     await pool.query("update discovery_runs set status='failed',error_summary='stale provider error',finished_at=now() where id=$1", [run.rows[0].id]);
-    await handler(job);
-    await handler(job);
+    const firstResult = await handler(job);
+    const repeatedResult = await handler(job);
 
     const accounts = await pool.query("select count(*)::int as count from instagram_accounts where username='same_result'");
     const sources = await pool.query('select count(*)::int as count from account_sources where discovery_run_id=$1', [run.rows[0].id]);
@@ -111,8 +113,10 @@ integration('job handler idempotency after worker restart', () => {
     `, [job.id]);
     assert.equal(accounts.rows[0].count, 1);
     assert.equal(sources.rows[0].count, 1);
-    assert.equal(pipelines.rows[0].count, 0);
-    assert.equal(enrichmentJobs.rows[0].count, 0);
+    assert.equal(pipelines.rows[0].count, 1);
+    assert.equal(enrichmentJobs.rows[0].count, 2);
+    assert.equal(firstResult.processingQueued, 1);
+    assert.equal(repeatedResult.processingQueued, 0);
     assert.deepEqual(storedRun.rows[0], { status: 'succeeded', error_summary: null });
     assert.deepEqual(providerLogs.rows.map(({ provider, outcome }) => ({ provider, outcome })), [
       { provider: 'scrapecreators', outcome: 'failed' },

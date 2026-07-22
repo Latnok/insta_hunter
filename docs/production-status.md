@@ -126,6 +126,12 @@ The first production scheduler cycle correctly found no new decisions for a crit
 
 Schema compatibility, local/public readiness, login and worker heartbeat passed. Web and worker are healthy on `instagram-hunter:0.2.2`; `checkit` remains healthy and `million-items-postgres` remains stopped. Temporary release files were removed.
 
+## Deployment 0.2.3
+
+This schema-compatible release makes discovery feed the existing candidate-processing pipeline automatically. Every discovered account that is still a candidate and has no prior pipeline gets profile and reels enrichment, transcript processing and, when useful content exists, an LLM evaluation. Rediscovery is idempotent: active and completed pipelines are not restarted, and non-candidate lifecycle states are preserved.
+
+Syntax/default/UI tests passed 67/67, the isolated PostgreSQL 16 suite passed 41/41 against clean schema v2, and the production dependency audit found no known vulnerabilities.
+
 ## Next operational action
 
 The OpenAI key was shared in chat. Rotate it in the OpenAI dashboard, update only `LLM_API_KEY` in `/opt/instagram-hunter/.env`, and recreate `web` and `worker`. Do not change the provider keys or other projects during that rotation.

@@ -9,6 +9,7 @@ import { transcribeWithGroq } from '../providers/groq.js';
 import { cancelPipelineWork } from '../services/jobs.js';
 import { createCriteriaDraft } from '../services/criteria.js';
 import { logProviderCalls } from '../services/provider-logs.js';
+import { startPipelineInTransaction } from '../services/pipelines.js';
 
 async function assertActivePipeline(client, job) {
   if (!job.pipeline_run_id) return;
@@ -42,7 +43,7 @@ async function handleDiscovery(context, job) {
     throw error;
   }
   await logProviderCalls(pool, { operation: 'search', job, result, provider: result.provider });
-  const counts = { found: result.items.length, created: 0, existing: 0, invalid: 0 };
+  const counts = { found: result.items.length, created: 0, existing: 0, processingQueued: 0, invalid: 0 };
   try {
     await withTransaction(pool, async (client) => {
       for (const item of result.items.slice(0, limit)) {
@@ -51,6 +52,20 @@ async function handleDiscovery(context, job) {
             input: item.username, sourceType: 'discovery', discoveryRunId: job.discovery_run_id, searchQuery: query
           });
           account.inserted ? counts.created++ : counts.existing++;
+          if (account.lifecycle_status === 'candidate') {
+            const priorPipeline = await client.query(
+              'select 1 from pipeline_runs where account_id=$1 limit 1',
+              [account.id]
+            );
+            if (!priorPipeline.rowCount) {
+              await startPipelineInTransaction(client, context.config, {
+                accountId: account.id,
+                runType: 'candidate_enrichment',
+                reelsLimit: context.config.REELS_DEFAULT_LIMIT
+              });
+              counts.processingQueued++;
+            }
+          }
         } catch { counts.invalid++; }
       }
       await client.query(`

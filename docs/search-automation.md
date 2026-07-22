@@ -24,6 +24,8 @@ Automatic discovery reads only queries from the active criteria version. Default
 
 Existing usernames are upserted without changing their lifecycle, so previously approved, rejected or archived accounts cannot return as new candidates. Per-day job keys and the existing account/source constraints make scheduler restarts idempotent.
 
+Every discovered account that is still a candidate and has never entered a processing pipeline is automatically queued for profile and reels enrichment. The normal pipeline then fetches transcripts, classifies useful content and runs the LLM evaluation. Rediscovery does not restart an existing or completed pipeline, and accounts in approved, rejected or archived states are never queued as candidates.
+
 ## Settings
 
 The **Settings → Автоматизация поиска** form controls both switches, the decision threshold, maximum refresh interval and discovery budgets. Saving creates a criteria draft; activation is explicit. The panel also shows today's scheduled discovery budget and pending automatic criteria jobs.
