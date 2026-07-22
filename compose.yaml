@@ -89,7 +89,7 @@ services:
     environment:
       PGHOST: postgres
       PGPORT: 5432
-      PGDATABASE: instagram_hunter
+      PGDATABASE: ${BACKUP_DATABASE:-instagram_hunter}
       PGUSER: instagram_hunter
       PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
