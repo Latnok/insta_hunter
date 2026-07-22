@@ -7,13 +7,20 @@ import { abortReason, signalWithTimeout } from '../lib/abort.js';
 
 async function groqRequest(config, form, { signal } = {}) {
   const started = Date.now();
-  const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-    method: 'POST', headers: { authorization: `Bearer ${config.GROQ_API_KEY}` }, body: form,
-    signal: signalWithTimeout(signal, 300_000)
-  });
+  let response;
+  try {
+    response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+      method: 'POST', headers: { authorization: `Bearer ${config.GROQ_API_KEY}` }, body: form,
+      signal: signalWithTimeout(signal, 300_000)
+    });
+  } catch (error) {
+    error.durationMs = Date.now() - started;
+    throw error;
+  }
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw Object.assign(new Error(data?.error?.message || `Groq HTTP ${response.status}`), { statusCode: response.status, responseData: data });
-  return { text: data.text?.trim() || null, rawPayload: data, requestMeta: { status: response.status, durationMs: Date.now() - started, requestId: data?.x_groq?.id || null } };
+  const requestMeta = { status: response.status, durationMs: Date.now() - started, requestId: data?.x_groq?.id || response.headers.get('x-groq-id') || null };
+  if (!response.ok) throw Object.assign(new Error(data?.error?.message || `Groq HTTP ${response.status}`), { statusCode: response.status, responseData: data, requestMeta });
+  return { text: data.text?.trim() || null, rawPayload: data, requestMeta };
 }
 
 function baseForm(config) {
@@ -80,10 +87,38 @@ export async function transcribeWithGroq(config, mediaUrl, dependencies = {}) {
   if (!config.GROQ_API_KEY) throw new Error('GROQ_API_KEY is not configured');
   const form = baseForm(config);
   form.set('url', mediaUrl);
-  try { return await (dependencies.groqRequest || groqRequest)(config, form, { signal: dependencies.signal }); }
+  const providerAttempts = [];
+  try {
+    const result = await (dependencies.groqRequest || groqRequest)(config, form, { signal: dependencies.signal });
+    providerAttempts.push({ provider: 'groq-whisper-url', outcome: 'succeeded', meta: result.requestMeta });
+    return { ...result, providerAttempts };
+  }
   catch (error) {
-    if (dependencies.signal?.aborted) throw error;
-    if (![400, 413, 422].includes(error.statusCode)) throw error;
-    return await downloadAndTranscribe(config, mediaUrl, dependencies);
+    providerAttempts.push({
+      provider: 'groq-whisper-url', outcome: 'failed',
+      meta: error.requestMeta || { status: error.statusCode, durationMs: error.durationMs },
+      error: { message: error.message, statusCode: error.statusCode, response: error.responseData }
+    });
+    if (dependencies.signal?.aborted || ![400, 413, 422].includes(error.statusCode)) {
+      error.providerAttempts = providerAttempts;
+      throw error;
+    }
+    const fallbackStarted = Date.now();
+    try {
+      const result = await downloadAndTranscribe(config, mediaUrl, dependencies);
+      providerAttempts.push({ provider: 'groq-whisper-file', outcome: 'succeeded', meta: result.requestMeta });
+      return { ...result, providerAttempts };
+    } catch (fallbackError) {
+      providerAttempts.push({
+        provider: 'groq-whisper-file', outcome: 'failed',
+        meta: fallbackError.requestMeta || {
+          status: fallbackError.statusCode,
+          durationMs: fallbackError.durationMs ?? Date.now() - fallbackStarted
+        },
+        error: { message: fallbackError.message, statusCode: fallbackError.statusCode, response: fallbackError.responseData }
+      });
+      fallbackError.providerAttempts = providerAttempts;
+      throw fallbackError;
+    }
   }
 }

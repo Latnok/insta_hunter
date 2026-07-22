@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
+import { redactSensitive } from '../src/lib/redact.js';
 import { createInstagramProviders } from '../src/providers/instagram.js';
 
 const fixturesDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'providers');
@@ -90,6 +91,10 @@ test('schema-change fixtures are rejected as empty and fall back to the second p
   assert.equal(result.provider, 'scrapecreators');
   assert.equal(result.fallbackErrors.length, 1);
   assert.match(result.fallbackErrors[0].message, /no author/);
+  assert.deepEqual(result.providerAttempts.map(({ provider, outcome }) => ({ provider, outcome })), [
+    { provider: 'socialcrawl', outcome: 'failed' },
+    { provider: 'scrapecreators', outcome: 'succeeded' }
+  ]);
 });
 
 for (const scenario of [
@@ -167,4 +172,24 @@ test('empty reels and transcript responses fall back to fixture results', async 
   const transcript = await providers.transcript('https://www.instagram.com/reel/FIXTURE/');
   assert.equal(transcript.provider, 'scrapecreators');
   assert.equal(calls, 4);
+});
+
+test('recursive provider payload redaction removes nested credentials and sensitive URL parameters', () => {
+  const circular = { safe: 'visible' };
+  circular.self = circular;
+  const redacted = redactSensitive({
+    authorization: 'Bearer header-secret',
+    nested: {
+      api_key: 'provider-secret',
+      message: 'request failed with Bearer inline-secret',
+      url: 'https://provider.example/path?token=query-secret&safe=visible'
+    },
+    circular
+  });
+  assert.equal(redacted.authorization, '[REDACTED]');
+  assert.equal(redacted.nested.api_key, '[REDACTED]');
+  assert.doesNotMatch(JSON.stringify(redacted), /header-secret|provider-secret|inline-secret|query-secret/);
+  assert.match(redacted.nested.url, /safe=visible/);
+  assert.equal(redacted.circular.safe, 'visible');
+  assert.equal(redacted.circular.self, '[Circular]');
 });

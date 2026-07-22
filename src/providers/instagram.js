@@ -15,12 +15,15 @@ function normalizeProfile(provider, username, payload, meta) {
     throw Object.assign(new Error(message), {
       emptyResult: true,
       statusCode: payload?.errorStatus || providerError?.status || 404,
-      responseData: payload
+      responseData: payload,
+      requestMeta: meta
     });
   }
   const author = payload?.data?.author || payload?.author || payload?.data?.user || payload?.user || payload?.data || payload;
   if (!author || Array.isArray(author) || !(author.username || author.handle || author.id || author.pk)) {
-    throw Object.assign(new Error(`${provider} profile response has no author`), { emptyResult: true, responseData: payload });
+    throw Object.assign(new Error(`${provider} profile response has no author`), {
+      emptyResult: true, responseData: payload, requestMeta: meta
+    });
   }
   return {
     status: 'available', provider, rawPayload: payload, requestMeta: meta,
@@ -84,7 +87,7 @@ function createSocialCrawl(config) {
   const headers = { 'x-api-key': config.SOCIALCRAWL_API_KEY };
   return {
     name: 'socialcrawl', enabled: Boolean(config.SOCIALCRAWL_API_KEY),
-    async search(query, limit, options = {}) { const r = await requestJson(`${base}/search/profiles`, { headers, query: { query, limit }, signal: options.signal }); return { items: normalizeSearch('socialcrawl', r.data), ...r }; },
+    async search(query, limit, options = {}) { const r = await requestJson(`${base}/search/profiles`, { headers, query: { query, limit }, signal: options.signal }); return { items: normalizeSearch('socialcrawl', r.data), rawPayload: r.data, requestMeta: r.meta, provider: 'socialcrawl' }; },
     async profile(username, options = {}) { const r = await requestJson(`${base}/profile`, { headers, query: { handle: username }, signal: options.signal }); return normalizeProfile('socialcrawl', username, r.data, r.meta); },
     async reels(username, limit, options = {}) { const r = await requestJson(`${base}/profile/reels`, { headers, query: { handle: username, limit }, signal: options.signal }); return { items: unwrapItems(r.data).map((x) => normalizeReel('socialcrawl', username, x)).filter(Boolean), rawPayload: r.data, requestMeta: r.meta, provider: 'socialcrawl' }; },
     async transcript(reelUrl, options = {}) { const r = await requestJson(`${base}/media/transcript`, { headers, query: { url: reelUrl }, signal: options.signal }); return normalizeTranscript('socialcrawl', r.data, r.meta); }
@@ -112,22 +115,37 @@ export function createInstagramProviders(config) {
   ]);
   async function fallback(operation, providers, args, options = {}) {
     const errors = [];
+    const providerAttempts = [];
     for (const provider of providers.filter((item) => item.enabled)) {
       try {
         const result = await limits.get(provider.name).run(() => provider[operation](...args, options), options);
         if (operation === 'search' || operation === 'reels') {
-          if (!result.items.length) throw Object.assign(new Error(`${provider.name} returned no items`), { emptyResult: true });
+          if (!result.items.length) throw Object.assign(new Error(`${provider.name} returned no items`), {
+            emptyResult: true, requestMeta: result.requestMeta, responseData: result.rawPayload
+          });
         }
-        if (operation === 'transcript' && result.status !== 'available') throw Object.assign(new Error(`${provider.name} returned no transcript`), { emptyResult: true });
-        return { ...result, fallbackErrors: errors };
+        if (operation === 'transcript' && result.status !== 'available') throw Object.assign(new Error(`${provider.name} returned no transcript`), {
+          emptyResult: true, requestMeta: result.requestMeta, responseData: result.rawPayload
+        });
+        providerAttempts.push({ provider: provider.name, outcome: 'succeeded', meta: result.requestMeta });
+        return { ...result, provider: result.provider || provider.name, fallbackErrors: errors, providerAttempts };
       } catch (error) {
-        errors.push({ provider: provider.name, message: error.message, statusCode: error.statusCode, payload: error.responseData });
-        if (options.signal?.aborted) throw Object.assign(error, { fallbackErrors: errors });
-        if (!error.emptyResult && !shouldFallback(error)) throw Object.assign(error, { fallbackErrors: errors });
+        const meta = error.requestMeta || { status: error.statusCode, durationMs: error.durationMs };
+        const failedAttempt = {
+          provider: provider.name,
+          outcome: 'failed',
+          meta,
+          error: { message: error.message, statusCode: error.statusCode, response: error.responseData }
+        };
+        providerAttempts.push(failedAttempt);
+        errors.push({ provider: provider.name, message: error.message, statusCode: error.statusCode, payload: error.responseData, requestMeta: meta });
+        if (options.signal?.aborted) throw Object.assign(error, { fallbackErrors: errors, providerAttempts });
+        if (!error.emptyResult && !shouldFallback(error)) throw Object.assign(error, { fallbackErrors: errors, providerAttempts });
       }
     }
     const error = new Error(`All providers failed for ${operation}`);
     error.fallbackErrors = errors;
+    error.providerAttempts = providerAttempts;
     throw error;
   }
   return {

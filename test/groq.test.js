@@ -40,6 +40,9 @@ test('Groq URL transcription does not create temporary files', async () => {
       }
     });
     assert.equal(result.text, 'url transcript');
+    assert.deepEqual(result.providerAttempts.map(({ provider, outcome }) => ({ provider, outcome })), [
+      { provider: 'groq-whisper-url', outcome: 'succeeded' }
+    ]);
   });
 });
 
@@ -59,6 +62,10 @@ test('Groq file fallback removes temporary files after success', async () => {
     });
     assert.equal(result.text, 'file transcript');
     assert.equal(calls, 2);
+    assert.deepEqual(result.providerAttempts.map(({ provider, outcome }) => ({ provider, outcome })), [
+      { provider: 'groq-whisper-url', outcome: 'failed' },
+      { provider: 'groq-whisper-file', outcome: 'succeeded' }
+    ]);
   });
 });
 
@@ -81,7 +88,14 @@ for (const stage of ['download', 'ffmpeg', 'groq-file']) {
           if (stage === 'ffmpeg') throw new Error('ffmpeg failed');
           await writeFile(output, 'audio');
         }
-      }), new RegExp(stage === 'groq-file' ? 'file transcription' : stage));
+      }), (error) => {
+        assert.match(error.message, new RegExp(stage === 'groq-file' ? 'file transcription' : stage));
+        assert.deepEqual(error.providerAttempts.map(({ provider, outcome }) => ({ provider, outcome })), [
+          { provider: 'groq-whisper-url', outcome: 'failed' },
+          { provider: 'groq-whisper-file', outcome: 'failed' }
+        ]);
+        return true;
+      });
     });
   });
 }

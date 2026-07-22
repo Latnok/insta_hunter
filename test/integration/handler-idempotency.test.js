@@ -76,6 +76,21 @@ integration('job handler idempotency after worker restart', () => {
     const instagram = {
       search: async () => ({
         provider: 'fixture', requestMeta: { status: 200 },
+        providerAttempts: [
+          {
+            provider: 'scrapecreators', outcome: 'failed',
+            meta: { status: 429, durationMs: 12, requestId: 'failed-request' },
+            error: {
+              message: 'limited',
+              response: {
+                authorization: 'Bearer header-secret',
+                nested: { api_key: 'provider-secret', safe: 'visible' },
+                url: 'https://provider.example/path?token=query-secret'
+              }
+            }
+          },
+          { provider: 'fixture', outcome: 'succeeded', meta: { status: 200, durationMs: 8, requestId: 'success-request' } }
+        ],
         items: [{ username: 'same_result' }]
       })
     };
@@ -90,11 +105,29 @@ integration('job handler idempotency after worker restart', () => {
     const pipelines = await pool.query('select count(*)::int as count from pipeline_runs');
     const enrichmentJobs = await pool.query("select count(*)::int as count from jobs where job_type <> 'discover_accounts'");
     const storedRun = await pool.query('select status,error_summary from discovery_runs where id=$1', [run.rows[0].id]);
+    const providerLogs = await pool.query(`
+      select provider,http_status,provider_request_id,duration_ms,outcome,error_payload
+      from provider_call_logs where job_id=$1 order by id
+    `, [job.id]);
     assert.equal(accounts.rows[0].count, 1);
     assert.equal(sources.rows[0].count, 1);
     assert.equal(pipelines.rows[0].count, 0);
     assert.equal(enrichmentJobs.rows[0].count, 0);
     assert.deepEqual(storedRun.rows[0], { status: 'succeeded', error_summary: null });
+    assert.deepEqual(providerLogs.rows.map(({ provider, outcome }) => ({ provider, outcome })), [
+      { provider: 'scrapecreators', outcome: 'failed' },
+      { provider: 'fixture', outcome: 'succeeded' },
+      { provider: 'scrapecreators', outcome: 'failed' },
+      { provider: 'fixture', outcome: 'succeeded' }
+    ]);
+    assert.deepEqual(providerLogs.rows[0].error_payload.response.nested, { api_key: '[REDACTED]', safe: 'visible' });
+    assert.equal(providerLogs.rows[0].error_payload.response.authorization, '[REDACTED]');
+    assert.doesNotMatch(JSON.stringify(providerLogs.rows[0].error_payload), /header-secret|provider-secret|query-secret/);
+    assert.deepEqual({
+      httpStatus: providerLogs.rows[0].http_status,
+      requestId: providerLogs.rows[0].provider_request_id,
+      durationMs: providerLogs.rows[0].duration_ms
+    }, { httpStatus: 429, requestId: 'failed-request', durationMs: 12 });
   });
 
   test('active pipeline clears a stale terminal error before waiting for remaining jobs', async () => {

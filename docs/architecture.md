@@ -189,6 +189,8 @@ Worker резервирует jobs через `FOR UPDATE SKIP LOCKED`. Прос
 
 Worker создаёт единый shutdown `AbortController`. При `SIGTERM`/`SIGINT` signal сначала отменяет ожидающие semaphore-операции и все in-flight HTTP/LLM/Groq запросы, DNS/media download и `ffmpeg`, затем worker дожидается terminal update jobs и закрывает pool. Shutdown-abort не считается основанием для fallback к следующему provider; запущенный `ffmpeg` принудительно завершается через `SIGKILL`.
 
+Каждый фактический SocialCrawl/ScrapeCreators/Groq URL или file-fallback вызов создаёт отдельную строку `provider_call_logs`, включая проигравшие попытки перед успешным fallback. Status, request ID и duration сохраняются на уровне попытки; error response рекурсивно очищается от Authorization/cookies/passwords/secrets/tokens/API keys, credential-like строк и чувствительных URL query-параметров до передачи в PostgreSQL. Ошибки последующей DB-обработки не маркируются как provider failures.
+
 Candidate pipeline различает отсутствие контента и технический сбой. Финальный failure обязательного profile/reels job, либо transcript/classify failure при отсутствии хотя бы одного полезного transcript, переводит run в `failed` с агрегированным `error_summary`. Только успешно обработанные, но пустые или шумовые данные дают `insufficient_data`.
 
 List routes нормализуют query до обращения к repositories: `offset` ограничен целым диапазоном 0–10000, `search` — одной строкой до 100 символов, а `status`, `quality` и `jobType` принимаются только из endpoint-specific allowlists. Повторные, структурные и неизвестные значения завершаются контролируемым HTTP 400 и не передаются PostgreSQL.

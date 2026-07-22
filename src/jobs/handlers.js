@@ -6,15 +6,7 @@ import { classifyTranscript, validateTranscriptRules } from '../domain/transcrip
 import { transcribeWithGroq } from '../providers/groq.js';
 import { cancelPipelineWork } from '../services/jobs.js';
 import { createCriteriaDraft } from '../services/criteria.js';
-
-async function logProvider(pool, { provider, operation, job, meta, outcome, error }) {
-  await pool.query(`
-    insert into provider_call_logs(provider,operation,account_id,reel_id,job_id,http_status,provider_request_id,duration_ms,outcome,error_payload)
-    values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-  `, [provider, operation, job.account_id, job.reel_id, job.id, meta?.status || error?.statusCode || null,
-    meta?.requestId || error?.requestMeta?.requestId || null, meta?.durationMs || error?.durationMs || null,
-    outcome, error ? { message: error.message, providers: error.fallbackErrors, response: error.responseData } : null]);
-}
+import { logProviderCalls } from '../services/provider-logs.js';
 
 async function assertActivePipeline(client, job) {
   if (!job.pipeline_run_id) return;
@@ -39,10 +31,17 @@ async function handleDiscovery(context, job) {
     update discovery_runs set status='running', error_summary=null, finished_at=null,
       started_at=coalesce(started_at,now()) where id=$1
   `, [job.discovery_run_id]);
+  let result;
   try {
-    const result = await instagram.search(query, limit, { signal: context.signal });
-    await logProvider(pool, { provider: result.provider, operation: 'search', job, meta: result.requestMeta, outcome: 'succeeded' });
-    const counts = { found: result.items.length, created: 0, existing: 0, invalid: 0 };
+    result = await instagram.search(query, limit, { signal: context.signal });
+  } catch (error) {
+    await logProviderCalls(pool, { operation: 'search', job, error, provider: 'instagram-fallback' });
+    await pool.query(`update discovery_runs set status='failed', error_summary=$2, finished_at=now() where id=$1`, [job.discovery_run_id, error.message]);
+    throw error;
+  }
+  await logProviderCalls(pool, { operation: 'search', job, result, provider: result.provider });
+  const counts = { found: result.items.length, created: 0, existing: 0, invalid: 0 };
+  try {
     await withTransaction(pool, async (client) => {
       for (const item of result.items.slice(0, limit)) {
         try {
@@ -59,7 +58,6 @@ async function handleDiscovery(context, job) {
     });
     return counts;
   } catch (error) {
-    await logProvider(pool, { provider: 'instagram-fallback', operation: 'search', job, outcome: 'failed', error });
     await pool.query(`update discovery_runs set status='failed', error_summary=$2, finished_at=now() where id=$1`, [job.discovery_run_id, error.message]);
     throw error;
   }
@@ -73,13 +71,18 @@ async function handleProfile(context, job) {
   const account = accountResult.rows[0];
   if (!account) throw new Error('Account not found');
   if (!job.payload.forceRefresh && account.fetched_at && !isStale(account.fetched_at, config.freshnessMs)) return { cached: true };
+  let result;
   try {
-    const result = await instagram.profile(account.username, { signal: context.signal });
-    await logProvider(pool, { provider: result.provider, operation: 'profile', job, meta: result.requestMeta, outcome: 'succeeded' });
-    const p = result.profile;
-    await withTransaction(pool, async (client) => {
-      await assertActivePipeline(client, job);
-      await client.query(`
+    result = await instagram.profile(account.username, { signal: context.signal });
+  } catch (error) {
+    await logProviderCalls(pool, { operation: 'profile', job, error, provider: 'instagram-fallback' });
+    throw error;
+  }
+  await logProviderCalls(pool, { operation: 'profile', job, result, provider: result.provider });
+  const p = result.profile;
+  await withTransaction(pool, async (client) => {
+    await assertActivePipeline(client, job);
+    await client.query(`
         insert into account_profiles(
           account_id,instagram_id,username,display_name,bio,avatar_url,external_url,followers,following,posts_count,
           verified,is_private,engagement_rate,language,content_category,profile_status,provider,raw_payload,fetched_at
@@ -90,13 +93,9 @@ async function handleProfile(context, job) {
           is_private=excluded.is_private,engagement_rate=excluded.engagement_rate,language=excluded.language,
           content_category=excluded.content_category,profile_status='available',provider=excluded.provider,
           unavailable_reason=null,raw_payload=excluded.raw_payload,fetched_at=now(),updated_at=now()
-      `, [job.account_id,p.instagramId,p.username,p.displayName,p.bio,p.avatarUrl,p.externalUrl,p.followers,p.following,p.postsCount,p.verified,p.isPrivate,p.engagementRate,p.language,p.contentCategory,result.provider,result.rawPayload]);
-    });
-    return { provider: result.provider };
-  } catch (error) {
-    await logProvider(pool, { provider: 'instagram-fallback', operation: 'profile', job, outcome: 'failed', error });
-    throw error;
-  }
+    `, [job.account_id,p.instagramId,p.username,p.displayName,p.bio,p.avatarUrl,p.externalUrl,p.followers,p.following,p.postsCount,p.verified,p.isPrivate,p.engagementRate,p.language,p.contentCategory,result.provider,result.rawPayload]);
+  });
+  return { provider: result.provider };
 }
 
 async function upsertReel(client, accountId, item) {
@@ -128,10 +127,15 @@ async function handleReels(context, job) {
     const latest = await pool.query('select max(fetched_at) as fetched_at from reels where account_id=$1', [job.account_id]);
     if (latest.rows[0].fetched_at && !isStale(latest.rows[0].fetched_at, config.freshnessMs)) return { cached: true };
   }
+  let result;
   try {
-    const result = await instagram.reels(account.username, job.payload.reelsLimit, { signal: context.signal });
-    await logProvider(pool, { provider: result.provider, operation: 'reels', job, meta: result.requestMeta, outcome: 'succeeded' });
-    const saved = await withTransaction(pool, async (client) => {
+    result = await instagram.reels(account.username, job.payload.reelsLimit, { signal: context.signal });
+  } catch (error) {
+    await logProviderCalls(pool, { operation: 'reels', job, error, provider: 'instagram-fallback' });
+    throw error;
+  }
+  await logProviderCalls(pool, { operation: 'reels', job, result, provider: result.provider });
+  const saved = await withTransaction(pool, async (client) => {
       await assertActivePipeline(client, job);
       const rows = [];
       for (const item of result.items.slice(0, job.payload.reelsLimit)) {
@@ -146,12 +150,8 @@ async function handleReels(context, job) {
         });
       }
       return rows;
-    });
-    return { provider: result.provider, saved: saved.length };
-  } catch (error) {
-    await logProvider(pool, { provider: 'instagram-fallback', operation: 'reels', job, outcome: 'failed', error });
-    throw error;
-  }
+  });
+  return { provider: result.provider, saved: saved.length };
 }
 
 async function handleTranscript(context, job) {
@@ -161,15 +161,24 @@ async function handleTranscript(context, job) {
   let result;
   try {
     result = await instagram.transcript(reel.reel_url, { signal: context.signal });
-    await logProvider(pool, { provider: result.provider, operation: 'transcript', job, meta: result.requestMeta, outcome: 'succeeded' });
   } catch (providerError) {
+    await logProviderCalls(pool, { operation: 'transcript', job, error: providerError, provider: 'instagram-fallback' });
     if (!reel.media_url) {
-      await logProvider(pool, { provider: 'instagram-fallback', operation: 'transcript', job, outcome: 'failed', error: providerError });
       throw new Error(`Transcript providers failed and reel has no media URL: ${providerError.message}`);
     }
-    result = await transcribeWithGroq(config, reel.media_url, { signal: context.signal });
-    result.provider = 'groq-whisper';
-    await logProvider(pool, { provider: result.provider, operation: 'transcript', job, meta: result.requestMeta, outcome: 'succeeded' });
+    let groqResult;
+    try {
+      groqResult = await transcribeWithGroq(config, reel.media_url, { signal: context.signal });
+    } catch (groqError) {
+      await logProviderCalls(pool, { operation: 'transcript', job, error: groqError, provider: 'groq-whisper' });
+      throw groqError;
+    }
+    groqResult.provider = 'groq-whisper';
+    await logProviderCalls(pool, { operation: 'transcript', job, result: groqResult, provider: groqResult.provider });
+    result = groqResult;
+  }
+  if (result.provider !== 'groq-whisper') {
+    await logProviderCalls(pool, { operation: 'transcript', job, result, provider: result.provider });
   }
   await withTransaction(pool, async (client) => {
     await assertActivePipeline(client, job);
