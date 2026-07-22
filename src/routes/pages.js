@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { getAccount, listAccountReels, listAccounts, listReels } from '../db/repositories/accounts.js';
 import { listJobs } from '../db/repositories/jobs.js';
+import { jobStatuses, jobTypes, parseListQuery, transcriptQualities } from '../domain/query.js';
 
 const pageSize = 24;
 
@@ -9,28 +10,32 @@ export function createPageRouter({ pool, config }) {
 
   router.get('/', (_req, res) => res.redirect('/candidates'));
   router.get('/candidates', async (req, res) => {
-    const statuses = req.query.status === 'rejected' ? ['rejected'] : ['candidate'];
-    const accounts = await listAccounts(pool, { statuses, search: req.query.search, limit: pageSize, offset: Number(req.query.offset || 0) });
+    const query = parseListQuery(req.query, { statuses: ['candidate', 'rejected'] });
+    const statuses = query.status === 'rejected' ? ['rejected'] : ['candidate'];
+    const accounts = await listAccounts(pool, { statuses, search: query.search, limit: pageSize, offset: query.offset });
     accounts.forEach((account) => { account.is_stale = !account.profile_fetched_at || Date.now() - new Date(account.profile_fetched_at).getTime() >= config.freshnessMs; });
     const discovery = await pool.query('select * from discovery_runs order by created_at desc limit 5');
-    res.render('accounts', { title: req.t('candidates'), active: 'candidates', accounts, discoveryRuns: discovery.rows, mode: 'candidates', query: req.query, config });
+    res.render('accounts', { title: req.t('candidates'), active: 'candidates', accounts, discoveryRuns: discovery.rows, mode: 'candidates', query, config });
   });
 
   router.get('/bloggers', async (req, res) => {
-    const statuses = req.query.status === 'archived' ? ['archived'] : ['approved'];
-    const accounts = await listAccounts(pool, { statuses, search: req.query.search, limit: pageSize, offset: Number(req.query.offset || 0) });
+    const query = parseListQuery(req.query, { statuses: ['approved', 'archived'] });
+    const statuses = query.status === 'archived' ? ['archived'] : ['approved'];
+    const accounts = await listAccounts(pool, { statuses, search: query.search, limit: pageSize, offset: query.offset });
     accounts.forEach((account) => { account.is_stale = !account.profile_fetched_at || Date.now() - new Date(account.profile_fetched_at).getTime() >= config.freshnessMs; });
-    res.render('accounts', { title: req.t('bloggers'), active: 'bloggers', accounts, discoveryRuns: [], mode: 'bloggers', query: req.query, config });
+    res.render('accounts', { title: req.t('bloggers'), active: 'bloggers', accounts, discoveryRuns: [], mode: 'bloggers', query, config });
   });
 
   router.get('/reels', async (req, res) => {
-    const reels = await listReels(pool, { search: req.query.search, quality: req.query.quality, limit: pageSize, offset: Number(req.query.offset || 0) });
-    res.render('reels', { title: req.t('reels'), active: 'reels', reels, query: req.query });
+    const query = parseListQuery(req.query, { qualities: transcriptQualities });
+    const reels = await listReels(pool, { search: query.search, quality: query.quality, limit: pageSize, offset: query.offset });
+    res.render('reels', { title: req.t('reels'), active: 'reels', reels, query });
   });
 
   router.get('/queue', async (req, res) => {
-    const jobs = await listJobs(pool, { status: req.query.status, jobType: req.query.jobType, limit: 50, offset: Number(req.query.offset || 0) });
-    res.render('queue', { title: req.t('queue'), active: 'queue', jobs, query: req.query });
+    const query = parseListQuery(req.query, { statuses: jobStatuses, types: jobTypes });
+    const jobs = await listJobs(pool, { status: query.status, jobType: query.jobType, limit: 50, offset: query.offset });
+    res.render('queue', { title: req.t('queue'), active: 'queue', jobs, query, jobTypes });
   });
 
   router.get('/settings', async (req, res) => {

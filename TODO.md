@@ -438,8 +438,8 @@ Definition of Done:
 
 Проверено локально:
 
-- `npm run check`: успешно, 55 JavaScript-файлов и 14 EJS-шаблонов.
-- `npm test`: 50 default-тестов успешно; отдельный PostgreSQL-прогон — 31/31.
+- `npm run check`: успешно, 57 JavaScript-файлов и 14 EJS-шаблонов.
+- `npm test`: 53 default-теста успешно; отдельный PostgreSQL-прогон — 32/32.
 - `npm audit --omit=dev`: 0 известных уязвимостей.
 - Docker integration suite выполнен на одноразовой PostgreSQL 16; контейнеры, сеть, volume и тестовые образы удалены.
 - Состав первого Git-коммита проверен на секреты и временные артефакты.
@@ -468,7 +468,7 @@ Definition of Done:
 - [x] Выдавать CSV preview одноразовый ID/version: сессия хранит до пяти независимых preview с TTL 15 минут, commit использует UUID/version, а `csv_import_batches` обеспечивает DB-level идемпотентность при повторных и конкурентных запросах.
 - [ ] Логировать каждую provider attempt, а не только итогового победителя: сохранять failed fallback calls и ошибку Groq fallback с duration/status/request ID, применяя рекурсивную redaction к response payload перед записью в `provider_call_logs`.
 - [x] При успешном retry очищать stale error state не только у `jobs`, но и у `discovery_runs`/`pipeline_runs`: manual retry атомарно переоткрывает связанный run, а переходы в `running`/`succeeded` очищают `error_summary` и несовместимый `finished_at`; regression-тесты покрывают оба типа run.
-- [ ] Валидировать и ограничивать `offset`, `status`, `quality` и `jobType` query-параметры. Отрицательный/NaN/чрезмерный offset сейчас доходит до PostgreSQL и превращает пользовательскую ошибку в 500; предпочтительнее cursor pagination для меняющихся списков.
+- [x] Валидировать и ограничивать `offset`, `status`, `quality` и `jobType` query-параметры: endpoint-specific allowlists, одиночные значения, `offset` 0–10000 и `search` до 100 символов проверяются до SQL; некорректный ввод возвращает 400, очередь показывает select допустимых job types.
 - [x] Сериализовать выделение `criteria_versions.version_number`: manual/LLM drafts используют общий transactional service и advisory lock, общий также с activation; 12 конкурентных транзакций получают последовательные версии без unique violation.
 - [ ] До первого изменения production-схемы утвердить отдельный DBA-процесс upgrade/rollback; bootstrap полной схемы намеренно не модифицирует непустую БД.
 - [ ] Вынести PostgreSQL suites в обязательную CI-команду. Обычный `npm test` сейчас зелёный при трёх пропущенных integration/security/queue suites; CI должна поднимать временную БД и падать при skip.

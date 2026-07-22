@@ -118,6 +118,32 @@ integration('authentication and request security', () => {
     assert.doesNotMatch(ready.text, /internal-user|secret|database\/private/);
   });
 
+  test('list pages reject malformed pagination and unsupported filters with 400', async () => {
+    const app = createApp({ config: config(), pool, logger });
+    const agent = request.agent(app);
+    const loginPage = await agent.get('/login').expect(200);
+    await agent.post('/auth/login').type('form').send({
+      _csrf: csrfFrom(loginPage), username: 'admin', password
+    }).expect(302);
+
+    const invalidUrls = [
+      '/candidates?offset=-1',
+      '/bloggers?offset=NaN',
+      '/reels?offset=10001',
+      '/candidates?status=approved',
+      '/bloggers?status=rejected',
+      '/reels?quality=excellent',
+      '/queue?status=unknown',
+      '/queue?jobType=drop_table',
+      '/queue?offset=0&offset=1'
+    ];
+    for (const url of invalidUrls) await agent.get(url).expect(400);
+
+    await agent.get('/candidates?status=candidate&offset=10000').expect(200);
+    await agent.get('/reels?quality=useful').expect(200);
+    await agent.get('/queue?status=failed&jobType=fetch_profile').expect(200);
+  });
+
   test('login is throttled by IP address', async () => {
     const app = createApp({ config: config(), pool, logger });
     const initial = await request(app).get('/login').expect(200);
