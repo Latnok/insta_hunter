@@ -258,6 +258,13 @@ create table provider_call_logs (
 );
 create index provider_logs_job_idx on provider_call_logs(job_id, created_at desc);
 
+create table csv_import_batches (
+  id uuid primary key,
+  preview_version integer not null check (preview_version = 1),
+  row_count integer not null check (row_count >= 0),
+  committed_at timestamptz not null default now()
+);
+
 create table user_sessions (
   sid varchar not null primary key,
   sess json not null,

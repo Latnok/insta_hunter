@@ -53,11 +53,10 @@ Groq сначала получает media URL. Если URL-вариант не
 
 CSV проходит preview до записи:
 
-- проверка UTF-8, размера и максимального числа строк;
-- наличие `url` или `username`;
-- нормализация;
-- статистика valid/invalid/duplicate/existing;
-- commit использует подписанный server-side import token, чтобы клиент не мог подменить preview.
+- файл обязан быть корректным UTF-8 с заголовком `username` и/или `url`; дополнительно разрешён только `source_note`;
+- preview имеет одноразовый UUID/version, живёт 15 минут и не перезаписывает preview из другой вкладки;
+- commit всего preview атомарен и идемпотентен на уровне `csv_import_batches`;
+- preview показывает статистику valid/invalid/duplicate, а нормализованные строки остаются только на server side.
 
 ## 5. Candidate enrichment
 

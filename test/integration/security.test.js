@@ -168,4 +168,68 @@ integration('authentication and request security', () => {
       .send({ _csrf: csrf, username: ' Admin ', password: 'wrong' })
       .expect(429);
   });
+
+  test('CSV upload returns safe 4xx errors and keeps parallel previews one-time', async () => {
+    const app = createApp({ config: config(), pool, logger });
+    const agent = request.agent(app);
+    const loginPage = await agent.get('/login').expect(200);
+    const loginCsrf = csrfFrom(loginPage);
+    await agent.post('/auth/login').type('form').send({
+      _csrf: loginCsrf,
+      username: 'admin',
+      password
+    }).expect(302);
+    const candidates = await agent.get('/candidates').expect(200);
+    const csrf = csrfFrom(candidates);
+
+    await agent.post('/imports/csv/preview')
+      .set('X-CSRF-Token', csrf)
+      .set('HX-Request', 'true')
+      .attach('file', Buffer.from('source_note\nmissing identity\n'), 'bad.csv')
+      .expect(400)
+      .expect(/requires a username or url header/);
+
+    await agent.post('/imports/csv/preview')
+      .set('X-CSRF-Token', csrf)
+      .set('HX-Request', 'true')
+      .attach('other', Buffer.from('username\nwrong_field\n'), 'bad.csv')
+      .expect(400)
+      .expect(/LIMIT_UNEXPECTED_FILE/);
+
+    await agent.post('/imports/csv/preview')
+      .set('X-CSRF-Token', csrf)
+      .set('HX-Request', 'true')
+      .attach('file', Buffer.alloc(config().uploadMaxBytes + 1, 0x61), 'large.csv')
+      .expect(413)
+      .expect(/CSV file is too large/);
+
+    const first = await agent.post('/imports/csv/preview')
+      .set('X-CSRF-Token', csrf)
+      .attach('file', Buffer.from('username\nparallel_csv_one\n'), 'one.csv')
+      .expect(200);
+    const second = await agent.post('/imports/csv/preview')
+      .set('X-CSRF-Token', csrf)
+      .attach('file', Buffer.from('username\nparallel_csv_two\n'), 'two.csv')
+      .expect(200);
+    const token = (response) => response.text.match(/name="previewId" value="([^"]+)"/)[1];
+    const firstId = token(first);
+    const secondId = token(second);
+    assert.notEqual(firstId, secondId);
+
+    await agent.post('/imports/csv/commit').type('form').send({
+      _csrf: csrf, previewId: firstId, previewVersion: 1
+    }).expect(303);
+    await agent.post('/imports/csv/commit').type('form').send({
+      _csrf: csrf, previewId: secondId, previewVersion: 1
+    }).expect(303);
+    await agent.post('/imports/csv/commit').type('form').send({
+      _csrf: csrf, previewId: firstId, previewVersion: 1
+    }).expect(409);
+
+    const imported = await pool.query(`
+      select username from instagram_accounts
+      where username in ('parallel_csv_one','parallel_csv_two') order by username
+    `);
+    assert.deepEqual(imported.rows.map((row) => row.username), ['parallel_csv_one', 'parallel_csv_two']);
+  });
 });

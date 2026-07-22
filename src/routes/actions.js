@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { Router } from 'express';
 import multer from 'multer';
 import { addManualAccount, approveAccount, archiveAccount, rejectAccount, restoreAccount } from '../services/accounts.js';
@@ -18,6 +19,40 @@ function requestMeta(req) {
   return { ip: req.ip, userAgent: req.get('user-agent') };
 }
 
+const csvPreviewVersion = 1;
+const csvPreviewTtlMs = 15 * 60 * 1000;
+const csvPreviewLimit = 5;
+
+function storeCsvPreview(req, preview) {
+  const now = Date.now();
+  const previews = req.session.csvPreviews && typeof req.session.csvPreviews === 'object'
+    ? req.session.csvPreviews
+    : {};
+  for (const [id, entry] of Object.entries(previews)) {
+    if (!entry?.createdAt || now - entry.createdAt > csvPreviewTtlMs) delete previews[id];
+  }
+  const previewId = crypto.randomUUID();
+  previews[previewId] = { version: csvPreviewVersion, createdAt: now, preview };
+  const ids = Object.keys(previews).sort((a, b) => previews[a].createdAt - previews[b].createdAt);
+  while (ids.length > csvPreviewLimit) delete previews[ids.shift()];
+  req.session.csvPreviews = previews;
+  return previewId;
+}
+
+function csvUploadMiddleware(upload) {
+  return (req, res, next) => upload.single('file')(req, res, (error) => {
+    if (!error) return next();
+    if (error instanceof multer.MulterError) {
+      error.statusCode = error.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
+      error.message = error.code === 'LIMIT_FILE_SIZE' ? 'CSV file is too large' : `Invalid CSV upload: ${error.code}`;
+    } else {
+      error.statusCode = 400;
+      error.message = 'Invalid CSV upload';
+    }
+    return next(error);
+  });
+}
+
 export function createActionRouter({ pool, config }) {
   const router = Router();
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: config.uploadMaxBytes, files: 1 } });
@@ -32,17 +67,25 @@ export function createActionRouter({ pool, config }) {
     return back(res);
   });
 
-  router.post('/imports/csv/preview', upload.single('file'), async (req, res) => {
+  router.post('/imports/csv/preview', csvUploadMiddleware(upload), async (req, res) => {
     if (!req.file) throw Object.assign(new Error('CSV file is required'), { statusCode: 400 });
     const preview = previewCsv(req.file.buffer, config);
-    req.session.csvPreview = preview;
-    return res.render('partials/csv-preview', { preview });
+    const previewId = storeCsvPreview(req, preview);
+    return res.render('partials/csv-preview', { preview, previewId, previewVersion: csvPreviewVersion });
   });
 
   router.post('/imports/csv/commit', async (req, res) => {
-    if (!req.session.csvPreview) throw Object.assign(new Error('CSV preview expired'), { statusCode: 409 });
-    await commitCsv(pool, config, req.session.csvPreview);
-    delete req.session.csvPreview;
+    const previewId = String(req.body.previewId || '');
+    const version = Number(req.body.previewVersion);
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(previewId) || version !== csvPreviewVersion) {
+      throw Object.assign(new Error('Invalid CSV preview token'), { statusCode: 400 });
+    }
+    const entry = req.session.csvPreviews?.[previewId];
+    if (!entry || entry.version !== version || Date.now() - entry.createdAt > csvPreviewTtlMs) {
+      throw Object.assign(new Error('CSV preview expired or was already used'), { statusCode: 409 });
+    }
+    await commitCsv(pool, config, { previewId, version, preview: entry.preview });
+    delete req.session.csvPreviews[previewId];
     return back(res);
   });
 

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import { after, before, beforeEach, describe, test } from 'node:test';
 import pg from 'pg';
 
@@ -11,6 +12,7 @@ import {
   rejectAccount,
   restoreAccount
 } from '../../src/services/accounts.js';
+import { commitCsv } from '../../src/services/imports.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const integration = databaseUrl ? describe : describe.skip;
@@ -33,6 +35,7 @@ integration('PostgreSQL repositories, constraints and lifecycle transitions', ()
         provider_call_logs,
         user_sessions,
         worker_heartbeats
+        ,csv_import_batches
       restart identity cascade
     `);
   });
@@ -223,5 +226,48 @@ integration('PostgreSQL repositories, constraints and lifecycle transitions', ()
       [account.id]
     );
     assert.deepEqual(audit.rows.map((row) => row.action), ['approved', 'archived', 'approved']);
+  });
+
+  test('CSV commit atomically creates every new account, pipeline and job', async () => {
+    const config = { REELS_DEFAULT_LIMIT: 3, REELS_MAX_LIMIT: 20, JOB_MAX_ATTEMPTS: 3 };
+    const previewId = crypto.randomUUID();
+    const preview = {
+      valid: [
+        { username: 'csv_atomic_one', sourceNote: 'one' },
+        { username: 'csv_atomic_two', sourceNote: 'two' }
+      ]
+    };
+    const attempts = await Promise.allSettled([
+      commitCsv(pool, config, { previewId, version: 1, preview }),
+      commitCsv(pool, config, { previewId, version: 1, preview })
+    ]);
+    const succeeded = attempts.filter((result) => result.status === 'fulfilled');
+    const rejected = attempts.filter((result) => result.status === 'rejected');
+    assert.equal(succeeded.length, 1);
+    assert.equal(succeeded[0].value.length, 2);
+    assert.equal(rejected.length, 1);
+    assert.match(rejected[0].reason.message, /already committed/);
+    assert.equal((await pool.query("select count(*)::int as count from instagram_accounts where source_type='csv'")).rows[0].count, 2);
+    assert.equal((await pool.query('select count(*)::int as count from pipeline_runs')).rows[0].count, 2);
+    assert.equal((await pool.query('select count(*)::int as count from jobs')).rows[0].count, 4);
+    assert.equal((await pool.query('select count(*)::int as count from csv_import_batches where id=$1', [previewId])).rows[0].count, 1);
+    await assert.rejects(
+      commitCsv(pool, config, { previewId, version: 1, preview }),
+      /already committed/
+    );
+  });
+
+  test('CSV commit rollback leaves no partial rows or consumed preview marker', async () => {
+    const config = { REELS_DEFAULT_LIMIT: 3, REELS_MAX_LIMIT: 20, JOB_MAX_ATTEMPTS: 3 };
+    const previewId = crypto.randomUUID();
+    await assert.rejects(commitCsv(pool, config, {
+      previewId,
+      version: 1,
+      preview: { valid: [{ username: 'csv_before_error' }, { username: 'bad username' }] }
+    }), /Invalid Instagram username/);
+    assert.equal((await pool.query("select count(*)::int as count from instagram_accounts where username='csv_before_error'")).rows[0].count, 0);
+    assert.equal((await pool.query('select count(*)::int as count from pipeline_runs')).rows[0].count, 0);
+    assert.equal((await pool.query('select count(*)::int as count from jobs')).rows[0].count, 0);
+    assert.equal((await pool.query('select count(*)::int as count from csv_import_batches where id=$1', [previewId])).rows[0].count, 0);
   });
 });

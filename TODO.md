@@ -310,7 +310,7 @@ Acceptance gate:
 
 - [x] Discovery сохраняет accounts без enrichment.
 - [x] Manual URL автоматически запускает pipeline — проверено HTTP smoke-тестом.
-- [ ] CSV preview/commit автоматически запускает новые accounts.
+- [x] CSV preview/commit автоматически запускает новые accounts; atomic integration-тест проверяет два pipeline и четыре стартовых jobs.
 - [ ] Insufficient data блокирует approve.
 - [ ] Useful transcript запускает LLM.
 - [ ] Human approve/reject и audit.
@@ -432,14 +432,14 @@ Definition of Done:
 - [x] Cover network, 404, 408, 429, 5xx, invalid JSON, empty result and non-retryable 400 branches without live API.
 - [x] Prove discovery creates candidate/source rows without enrichment jobs.
 - [x] Prove fresh profile/reels use cache while force refresh calls providers and upserts the existing reel.
-- [x] Pass 26/26 PostgreSQL integration tests and 47/47 default tests.
+- [x] Pass 29/29 PostgreSQL integration tests and 50/50 default tests.
 
 ## Debug-аудит — 2026-07-22
 
 Проверено локально:
 
 - `npm run check`: успешно, 54 JavaScript-файла и 14 EJS-шаблонов.
-- `npm test`: 47 default-тестов успешно; отдельный PostgreSQL-прогон — 26/26.
+- `npm test`: 50 default-тестов успешно; отдельный PostgreSQL-прогон — 29/29.
 - `npm audit --omit=dev`: 0 известных уязвимостей.
 - Docker integration suite выполнен на одноразовой PostgreSQL 16; контейнеры, сеть, volume и тестовые образы удалены.
 - Состав первого Git-коммита проверен на секреты и временные артефакты.
@@ -463,9 +463,9 @@ Definition of Done:
 - [x] Не маскировать технический failure как `insufficient_data`: исчерпание обязательного profile/reels или всех transcript/classify jobs без полезного результата завершает pipeline как `failed` с агрегированным `error_summary`; `insufficient_data` остаётся для успешно обработанных пустых/шумовых данных.
 - [x] Защитить worker slot от тихой остановки: `reserveJob`, terminal job update и `maybeAdvancePipeline` изолированы supervisor-ом с backoff; каждый slot публикует отдельный heartbeat, healthcheck проверяет ожидаемое число живых slots, временные DB failures покрыты тестами.
 - [x] Ограничить manual retry значением DB constraint: бюджет увеличивается максимум до 10 попыток, а retry при `attempts >= 10` возвращает контролируемый конфликт.
-- [ ] Сделать CSV commit атомарным для всего preview или явно реализовать resumable import batch. Сейчас каждая строка и каждый pipeline создаются отдельными транзакциями, поэтому ошибка в середине оставляет частичный импорт.
-- [ ] Ужесточить CSV contract: явно проверять UTF-8 и обязательное наличие `username` или `url` header, отклонять лишние/неполные колонки вместо `relax_column_count: true`, нормализовать Multer limit/parser errors в 4xx и добавить abuse-тесты.
-- [ ] Выдавать CSV preview одноразовый ID/version вместо одного `req.session.csvPreview`: параллельные вкладки сейчас перезаписывают preview друг друга; commit должен быть идемпотентным и защищённым от повторной отправки.
+- [x] Сделать CSV commit атомарным для всего preview: account sources, новые accounts, pipeline runs, jobs и batch marker записываются одной транзакцией; ошибка любой строки откатывает всё.
+- [x] Ужесточить CSV contract: fatal UTF-8 decode, обязательный `username`/`url`, только `username,url,source_note`, уникальные headers и строгая длина строк; Multer/parser errors нормализованы в 400/413 и покрыты abuse-тестами.
+- [x] Выдавать CSV preview одноразовый ID/version: сессия хранит до пяти независимых preview с TTL 15 минут, commit использует UUID/version, а `csv_import_batches` обеспечивает DB-level идемпотентность при повторных и конкурентных запросах.
 - [ ] Логировать каждую provider attempt, а не только итогового победителя: сохранять failed fallback calls и ошибку Groq fallback с duration/status/request ID, применяя рекурсивную redaction к response payload перед записью в `provider_call_logs`.
 - [ ] При успешном retry очищать stale error state не только у `jobs`, но и у `discovery_runs`/`pipeline_runs`; UI не должен одновременно показывать `succeeded` и старый `error_summary`.
 - [ ] Валидировать и ограничивать `offset`, `status`, `quality` и `jobType` query-параметры. Отрицательный/NaN/чрезмерный offset сейчас доходит до PostgreSQL и превращает пользовательскую ошибку в 500; предпочтительнее cursor pagination для меняющихся списков.

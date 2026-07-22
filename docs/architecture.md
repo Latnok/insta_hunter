@@ -189,6 +189,8 @@ Worker создаёт единый shutdown `AbortController`. При `SIGTERM`/
 
 Candidate pipeline различает отсутствие контента и технический сбой. Финальный failure обязательного profile/reels job, либо transcript/classify failure при отсутствии хотя бы одного полезного transcript, переводит run в `failed` с агрегированным `error_summary`. Только успешно обработанные, но пустые или шумовые данные дают `insufficient_data`.
 
+CSV принимает только корректный UTF-8 с header row. Разрешены уникальные колонки `username`, `url`, `source_note`; обязательна хотя бы одна identity-колонка, а неполные и лишние колонки отклоняются. Preview получает UUID и version, хранится в ограниченном session map 15 минут и подтверждается один раз. Таблица `csv_import_batches` блокирует повторный/конкурентный commit, а весь batch — accounts, sources, pipelines и jobs — записывается одной транзакцией.
+
 ### 4.8 `job_attempts`
 
 Каждая попытка отдельно хранит:

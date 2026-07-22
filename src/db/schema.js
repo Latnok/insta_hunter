@@ -7,7 +7,8 @@ const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const defaultSchemaFile = path.resolve(currentDir, '../../db/schema.sql');
 const requiredTables = [
   'instagram_accounts', 'account_sources', 'account_profiles', 'reels',
-  'criteria_versions', 'evaluations', 'jobs', 'job_attempts', 'audit_events'
+  'criteria_versions', 'evaluations', 'jobs', 'job_attempts', 'audit_events',
+  'csv_import_batches'
 ];
 
 export async function initializeSchema(pool, { schemaFile = defaultSchemaFile, logger } = {}) {
