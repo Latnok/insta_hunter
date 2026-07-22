@@ -7,7 +7,7 @@ Last verified: 2026-07-22.
 - Public URL: `https://insta.podedu.ru`
 - Server directory: `/opt/instagram-hunter`
 - Compose project: `insta_hunter`
-- Application image: `instagram-hunter:0.2.0`
+- Application image: `instagram-hunter:0.2.1`
 - Active database: `instagram_hunter_v2`, complete schema version `2`.
 - Web binding: `127.0.0.1:13002`; public traffic terminates at the system Nginx.
 - TLS certificate is managed by Certbot and is valid through 2026-10-19.
@@ -103,6 +103,16 @@ The schema-changing release used the approved blue/green process. A full rehears
 Production writers were stopped at `2026-07-22T08:47:23Z` and restarted on v2 at `2026-07-22T08:47:37Z`. All transferred counts matched: 43 accounts, 42 profiles, 64 reels, 51 jobs, 68 job attempts, six LLM logs, one evaluation and one active criteria version. The new `outreach_proposals` table started empty. Public HTTPS readiness, web health and both worker heartbeats passed after cutover.
 
 Rollback assets are retained under `/opt/instagram-hunter-rollbacks/0.2.0`: application `0.1.12`, its protected environment file and the unchanged `instagram_hunter_v1` database. Final v1 dump SHA-256: `5a78daaf018799b7691330f4c0d5620d38ffe3cff5aac460430f9faa57b2a0c6`. The pre-cutover dump SHA-256 is `187986d14b4b7b2630c8645aec24c2ea1a01492640f9c39bc31bc7bcb96d767e`. Temporary rehearsal databases, scripts, archives and images `0.1.1`–`0.1.11` were removed. `checkit` remained healthy and `million-items-postgres` remained stopped.
+
+## Deployment 0.2.1
+
+Release commit `fed2fac` adds editable, versioned prompts for candidate analysis and barter-offer generation. Commit `2fc64c3` includes the accompanying user README edit; both commits were pushed to `origin/master` before the release archive was created. The archive SHA-256 was `fade21accc90f5993abc5f9dddcc6ad8607906e7ce9cf3266fd7966b778e43f2`; the immutable image ID is `sha256:637f04c815f315885d9431ca27c44a8cbdeebd5ff3642bb5da29195cabfe7619`.
+
+This is a schema-compatible release. Prompts are stored inside the existing `criteria_versions.transcript_rules` JSONB document. Existing active criteria use safe built-in defaults until an administrator saves and explicitly activates a prompt draft. The structured JSON response contract remains enforced in code.
+
+Syntax and default/UI tests passed 64/64, the disposable PostgreSQL 16 suite passed 37/37 on clean schema v2, and `npm audit --omit=dev --audit-level=high` found no known vulnerabilities. The server build repeated the 64-test gate. Pre-deployment backup: `instagram_hunter_20260722T090256Z.dump`.
+
+After rollout, schema check reports expected and actual version `2`; public and local readiness return `ready`; `/login` returns HTTP 200; web and worker are healthy on `instagram-hunter:0.2.1`. `checkit` remains healthy and `million-items-postgres` remains stopped. Temporary release archives and build directories were removed. Image `0.2.0` and the established `0.2.0` rollback assets remain available.
 
 ## Next operational action
 

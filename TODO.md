@@ -11,7 +11,7 @@
 - [x] Оставить технический JSON-контракт неизменяемым в коде, независимо от текста пользовательского промпта.
 - [x] Проверить trim, обязательность, лимит 12 000 символов, CSRF, неизменность active-версии и использование промптов обоими worker-handlers.
 - [x] Прогнать syntax/default/UI suite: 64/64 теста; PostgreSQL integration suite на чистой schema v2: 37/37.
-- [ ] Развернуть schema-compatible release `0.2.1`, проверить public readiness, worker heartbeat, `checkit` и остановленный `million-items-postgres`.
+- [x] Развернуть schema-compatible release `0.2.1`, проверить public readiness, worker heartbeat, `checkit` и остановленный `million-items-postgres`.
 
 ## Персональные бартерные предложения — 2026-07-22
 
