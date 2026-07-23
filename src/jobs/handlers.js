@@ -60,8 +60,7 @@ async function handleDiscovery(context, job) {
             if (!priorPipeline.rowCount) {
               await startPipelineInTransaction(client, context.config, {
                 accountId: account.id,
-                runType: 'candidate_enrichment',
-                reelsLimit: context.config.REELS_DEFAULT_LIMIT
+                runType: 'candidate_enrichment'
               });
               counts.processingQueued++;
             }

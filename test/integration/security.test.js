@@ -292,8 +292,9 @@ integration('authentication and request security', () => {
 
     await agent.post('/automation/drafts').type('form').send({
       _csrf: csrf, criteriaEnabled: 'on', decisionThreshold: 5, refreshHours: 12,
-      discoveryEnabled: 'on', dailyDiscoveryLimit: 30, perQueryLimit: 6
-    }).expect(303).expect('Location', '/settings');
+      discoveryEnabled: 'on', dailyDiscoveryLimit: 30, perQueryLimit: 6,
+      reelsPerCandidate: 8
+    }).expect(303).expect('Location', '/settings?section=automation');
     const draft = (await pool.query(`
       select * from criteria_versions
       where parent_version_id=$1 and diff_summary='Criteria automation settings updated'
@@ -301,13 +302,14 @@ integration('authentication and request security', () => {
     `, [active.id])).rows[0];
     assert.deepEqual(draft.transcript_rules.criteriaAutomation, {
       criteriaEnabled: true, decisionThreshold: 5, refreshHours: 12,
-      discoveryEnabled: true, dailyDiscoveryLimit: 30, perQueryLimit: 6
+      discoveryEnabled: true, dailyDiscoveryLimit: 30, perQueryLimit: 6,
+      reelsPerCandidate: 8
     });
     assert.equal(draft.status, 'draft');
 
     await agent.post('/automation/drafts').type('form').send({
       _csrf: csrf, decisionThreshold: 0, refreshHours: 12,
-      dailyDiscoveryLimit: 30, perQueryLimit: 6
+      dailyDiscoveryLimit: 30, perQueryLimit: 6, reelsPerCandidate: 8
     }).expect(400);
 
     await pool.query('delete from criteria_versions where id=$1', [draft.id]);

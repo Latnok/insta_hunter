@@ -50,6 +50,7 @@ test('approved blogger drawer presents personalized outreach for human approval'
   const html = await ejs.renderFile(path.join(views, 'partials/account-drawer.ejs'), {
     locale: 'ru', csrfToken: 'csrf-token', t: (key) => key,
     config: { REELS_MAX_LIMIT: 20, REELS_DEFAULT_LIMIT: 5 },
+    reelsPerCandidate: 7,
     account: {
       id: 7, username: 'warm_creator', lifecycle_status: 'approved', instagram_url: 'https://instagram.com/warm_creator',
       avatar_url: null, display_name: 'Creator', bio: 'Style', followers: 1000, reels_count: 1,
@@ -65,12 +66,14 @@ test('approved blogger drawer presents personalized outreach for human approval'
   assert.match(html, /Тёплое персональное предложение/);
   assert.match(html, /Утвердить этот текст/);
   assert.match(html, /\/outreach\/3\/approve/);
+  assert.match(html, /name="reelsLimit"[^>]*value="7"/);
 });
 
 test('approved blogger drawer polls while outreach generation is active', async () => {
   const html = await ejs.renderFile(path.join(views, 'partials/account-drawer.ejs'), {
     locale: 'ru', csrfToken: 'csrf-token', t: (key) => key,
     config: { REELS_MAX_LIMIT: 20, REELS_DEFAULT_LIMIT: 5 },
+    reelsPerCandidate: 7,
     account: {
       id: 8, username: 'pending_creator', lifecycle_status: 'approved', instagram_url: 'https://instagram.com/pending_creator',
       avatar_url: null, display_name: null, bio: null, followers: null, reels_count: 0,
@@ -117,9 +120,11 @@ test('settings keeps LLM prompts in the specialist section and automation in a s
     llmPrompts: { candidateEvaluation: 'ANALYSIS PROMPT', outreachProposal: 'OUTREACH PROMPT' },
     criteriaAutomation: {
       criteriaEnabled: true, decisionThreshold: 10, refreshHours: 24,
-      discoveryEnabled: true, dailyDiscoveryLimit: 20, perQueryLimit: 5
+      discoveryEnabled: true, dailyDiscoveryLimit: 20, perQueryLimit: 5,
+      reelsPerCandidate: 7
     },
-    automationStatus: { discovery_used_today: 5, pending_criteria_jobs: 1, last_discovery_at: now }
+    automationStatus: { discovery_used_today: 5, pending_criteria_jobs: 1, last_discovery_at: now },
+    reelsMaxLimit: 20
   });
   assert.match(html, /Промпты LLM/);
   assert.match(html, /name="candidateEvaluation"/);
@@ -135,11 +140,14 @@ test('settings keeps LLM prompts in the specialist section and automation in a s
     title: 'Settings', locale: 'ru', csrfToken: 'csrf-token', active: 'settings', section: 'automation',
     t: (key) => key, criteria: [{ id: 1, version_number: 7, status: 'active', source: 'manual', created_at: now, checklist_markdown: 'criteria', transcript_rules: {} }],
     llmLogs: [], llmPrompts: { candidateEvaluation: 'A', outreachProposal: 'B' },
-    criteriaAutomation: { criteriaEnabled: true, decisionThreshold: 10, refreshHours: 24, discoveryEnabled: true, dailyDiscoveryLimit: 20, perQueryLimit: 5 },
-    automationStatus: { discovery_used_today: 5, pending_criteria_jobs: 1, last_discovery_at: now }
+    criteriaAutomation: { criteriaEnabled: true, decisionThreshold: 10, refreshHours: 24, discoveryEnabled: true, dailyDiscoveryLimit: 20, perQueryLimit: 5, reelsPerCandidate: 7 },
+    automationStatus: { discovery_used_today: 5, pending_criteria_jobs: 1, last_discovery_at: now },
+    reelsMaxLimit: 20
   });
   assert.match(automationHtml, /Автоматизация поиска/);
   assert.match(automationHtml, /name="decisionThreshold"/);
   assert.match(automationHtml, /name="dailyDiscoveryLimit"/);
+  assert.match(automationHtml, /name="reelsPerCandidate"[^>]*value="7"/);
+  assert.match(automationHtml, /Материалов на кандидата/);
   assert.match(automationHtml, /5 \/ 20/);
 });

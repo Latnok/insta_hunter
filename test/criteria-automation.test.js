@@ -16,10 +16,12 @@ test('uses safe automation defaults for existing criteria', () => {
 test('validates and embeds criteria automation settings', () => {
   const settings = validateCriteriaAutomation({
     criteriaEnabled: true, decisionThreshold: 12, refreshHours: 48,
-    discoveryEnabled: false, dailyDiscoveryLimit: 30, perQueryLimit: 6
+    discoveryEnabled: false, dailyDiscoveryLimit: 30, perQueryLimit: 6,
+    reelsPerCandidate: 8
   });
   assert.deepEqual(withCriteriaAutomation({ minWords: 3 }, settings).criteriaAutomation, settings);
   assert.throws(() => validateCriteriaAutomation({ ...settings, decisionThreshold: 0 }));
+  assert.throws(() => validateCriteriaAutomation({ ...settings, reelsPerCandidate: 21 }));
   assert.throws(() => validateCriteriaAutomation({ ...settings, discoveryEnabled: 'yes' }));
 });
 

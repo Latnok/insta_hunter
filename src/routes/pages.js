@@ -107,7 +107,8 @@ export function createPageRouter({ pool, config, imageLoader = downloadImage }) 
     `)).rows[0];
     res.render('settings', {
       title: req.t('settings'), active: 'settings', criteria: result.rows, llmLogs: logs.rows,
-      llmPrompts, criteriaAutomation, automationStatus, section
+      llmPrompts, criteriaAutomation, automationStatus, section,
+      reelsMaxLimit: Math.min(config.REELS_MAX_LIMIT, 20)
     });
   });
 
@@ -137,7 +138,14 @@ export function createPageRouter({ pool, config, imageLoader = downloadImage }) 
     const outreach = await pool.query(`
       select * from outreach_proposals where account_id=$1 order by created_at desc limit 10
     `, [account.id]);
-    return res.render('partials/account-drawer', { account, reels, audit: audit.rows, jobs: jobs.rows, outreach: outreach.rows, config });
+    const activeCriteria = await pool.query(`
+      select transcript_rules from criteria_versions where status='active' limit 1
+    `);
+    const reelsPerCandidate = resolveCriteriaAutomation(activeCriteria.rows[0]?.transcript_rules).reelsPerCandidate;
+    return res.render('partials/account-drawer', {
+      account, reels, audit: audit.rows, jobs: jobs.rows, outreach: outreach.rows,
+      config, reelsPerCandidate
+    });
   });
 
   router.get('/ui/reels/:id', async (req, res) => {

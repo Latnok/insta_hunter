@@ -79,7 +79,7 @@ export async function commitCsv(pool, config, { previewId, version, preview }) {
       });
       let pipeline = null;
       if (account.inserted) pipeline = await startPipelineInTransaction(client, config, {
-        accountId: account.id, runType: 'candidate_enrichment', reelsLimit: config.REELS_DEFAULT_LIMIT
+        accountId: account.id, runType: 'candidate_enrichment'
       });
       results.push({ account, pipeline });
     }

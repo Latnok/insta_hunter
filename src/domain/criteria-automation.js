@@ -4,7 +4,8 @@ export const DEFAULT_CRITERIA_AUTOMATION = Object.freeze({
   refreshHours: 24,
   discoveryEnabled: true,
   dailyDiscoveryLimit: 20,
-  perQueryLimit: 5
+  perQueryLimit: 5,
+  reelsPerCandidate: 3
 });
 
 function integer(value, key, min, max) {
@@ -27,7 +28,13 @@ export function validateCriteriaAutomation(value) {
     refreshHours: integer(value.refreshHours, 'refreshHours', 1, 168),
     discoveryEnabled: value.discoveryEnabled,
     dailyDiscoveryLimit: integer(value.dailyDiscoveryLimit, 'dailyDiscoveryLimit', 1, 100),
-    perQueryLimit: integer(value.perQueryLimit, 'perQueryLimit', 1, 100)
+    perQueryLimit: integer(value.perQueryLimit, 'perQueryLimit', 1, 100),
+    reelsPerCandidate: integer(
+      value.reelsPerCandidate ?? DEFAULT_CRITERIA_AUTOMATION.reelsPerCandidate,
+      'reelsPerCandidate',
+      1,
+      20
+    )
   };
 }
 

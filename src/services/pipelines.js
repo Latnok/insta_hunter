@@ -1,5 +1,6 @@
 import { withTransaction } from '../db/pool.js';
 import { enqueueJob } from '../db/repositories/jobs.js';
+import { resolveCriteriaAutomation } from '../domain/criteria-automation.js';
 
 export async function startPipeline(pool, config, { accountId, runType, reelsLimit, forceRefresh = false }) {
   return withTransaction(pool, (client) => startPipelineInTransaction(client, config, {
@@ -7,11 +8,23 @@ export async function startPipeline(pool, config, { accountId, runType, reelsLim
   }));
 }
 
-export async function startPipelineInTransaction(client, config, { accountId, runType, reelsLimit, forceRefresh = false }) {
-  const limit = Number(reelsLimit || config.REELS_DEFAULT_LIMIT);
+export async function resolvePipelineReelsLimit(client, config, reelsLimit) {
+  let defaultLimit = config.REELS_DEFAULT_LIMIT;
+  if (reelsLimit === undefined || reelsLimit === null || reelsLimit === '') {
+    const activeCriteria = await client.query(`
+      select transcript_rules from criteria_versions where status='active' limit 1
+    `);
+    defaultLimit = resolveCriteriaAutomation(activeCriteria.rows[0]?.transcript_rules).reelsPerCandidate;
+  }
+  const limit = Number(reelsLimit || defaultLimit);
   if (!Number.isInteger(limit) || limit < 1 || limit > config.REELS_MAX_LIMIT) {
     throw Object.assign(new Error(`reelsLimit must be between 1 and ${config.REELS_MAX_LIMIT}`), { statusCode: 400 });
   }
+  return limit;
+}
+
+export async function startPipelineInTransaction(client, config, { accountId, runType, reelsLimit, forceRefresh = false }) {
+  const limit = await resolvePipelineReelsLimit(client, config, reelsLimit);
   const accountResult = await client.query('select * from instagram_accounts where id=$1 for update', [accountId]);
   const account = accountResult.rows[0];
   if (!account) throw Object.assign(new Error('Account not found'), { statusCode: 404 });

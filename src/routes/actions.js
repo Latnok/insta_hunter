@@ -216,7 +216,8 @@ export function createActionRouter({ pool, config }) {
         refreshHours: Number(req.body.refreshHours),
         discoveryEnabled: req.body.discoveryEnabled === 'on',
         dailyDiscoveryLimit: Number(req.body.dailyDiscoveryLimit),
-        perQueryLimit: Number(req.body.perQueryLimit)
+        perQueryLimit: Number(req.body.perQueryLimit),
+        reelsPerCandidate: Number(req.body.reelsPerCandidate)
       });
     } catch (error) {
       throw Object.assign(new Error(`Invalid automation settings: ${error.message}`), { statusCode: 400 });
