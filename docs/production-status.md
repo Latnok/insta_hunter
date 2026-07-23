@@ -150,6 +150,31 @@ Release commits `f3af65c` and `8dc66b7` were pushed to `origin/master`. The fina
 
 The production downloader smoke returned the latest stored avatar as `image/jpeg` with 13,089 bytes and the latest reel thumbnail as `image/jpeg` with 56,545 bytes. Web and worker are healthy on `instagram-hunter:0.2.5`, schema v2 is compatible and the public login is reachable. `checkit` remains healthy and `million-items-postgres` remains stopped.
 
+## Deployment 0.3.0
+
+This schema-compatible release redesigns the administrator interface, updates
+the illustrated user guide, adds a versioned materials-per-candidate limit and
+places immediate `Автопоиск` / `Автообработка` controls in the header. Disabling
+automatic processing prevents new manual, CSV and discovery candidates from
+starting a pipeline while preserving the explicit manual analysis action.
+
+Release commit `8bea52e` was pushed to `origin/master`. The source archive
+SHA-256 was `f36cb61407f223376c035cdfcb85a2db200873b9eef2cf835a2ac4a2478b71b6`;
+the image archive SHA-256 was
+`da8a1d549062fc17568ef9b687c24ef653683ec9c554624916f8899a374d8666`.
+The loaded runtime image ID is
+`sha256:99d9fc84e8fde7bf64d07deddade283b1969a8a05eff4e650559edf8137a692a`.
+Pre-deployment backup: `instagram_hunter_20260723T084824Z.dump`; `pg_restore`
+successfully read its catalog before cutover.
+
+The Docker test stage passed syntax and 73 default/unit/UI tests. The 0.3.0
+image confirmed schema v2 compatibility before rollout. After cutover, web and
+worker are healthy on `instagram-hunter:0.3.0`, local and public readiness
+return `ready`, `/login` returns HTTP 200 and the public CSS contains the new
+automation-header controls. `checkit` remains healthy and
+`million-items-postgres` remains stopped. The 0.2.5 image and Compose
+configuration remain available for application rollback.
+
 ## Next operational action
 
 The OpenAI key was shared in chat. Rotate it in the OpenAI dashboard, update only `LLM_API_KEY` in `/opt/instagram-hunter/.env`, and recreate `web` and `worker`. Do not change the provider keys or other projects during that rotation.
