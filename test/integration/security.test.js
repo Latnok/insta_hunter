@@ -293,7 +293,7 @@ integration('authentication and request security', () => {
     await agent.post('/automation/drafts').type('form').send({
       _csrf: csrf, criteriaEnabled: 'on', decisionThreshold: 5, refreshHours: 12,
       discoveryEnabled: 'on', dailyDiscoveryLimit: 30, perQueryLimit: 6,
-      reelsPerCandidate: 8
+      processingEnabled: 'true', reelsPerCandidate: 8
     }).expect(303).expect('Location', '/settings?section=automation');
     const draft = (await pool.query(`
       select * from criteria_versions
@@ -302,7 +302,7 @@ integration('authentication and request security', () => {
     `, [active.id])).rows[0];
     assert.deepEqual(draft.transcript_rules.criteriaAutomation, {
       criteriaEnabled: true, decisionThreshold: 5, refreshHours: 12,
-      discoveryEnabled: true, dailyDiscoveryLimit: 30, perQueryLimit: 6,
+      discoveryEnabled: true, processingEnabled: true, dailyDiscoveryLimit: 30, perQueryLimit: 6,
       reelsPerCandidate: 8
     });
     assert.equal(draft.status, 'draft');

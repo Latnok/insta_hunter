@@ -11,7 +11,7 @@ import { cancelJob, retryJob } from '../services/jobs.js';
 import { createCriteriaDraft, criteriaWriteLockKey } from '../services/criteria.js';
 import { decideOutreachDraft, regenerateOutreachDraft, saveOutreachDraft } from '../services/outreach.js';
 import { validateLlmPrompts, withLlmPrompts } from '../domain/llm-prompts.js';
-import { validateCriteriaAutomation, withCriteriaAutomation } from '../domain/criteria-automation.js';
+import { resolveCriteriaAutomation, validateCriteriaAutomation, withCriteriaAutomation } from '../domain/criteria-automation.js';
 import { enqueueCriteriaProposal as enqueueCriteriaProposalJob } from '../services/automation.js';
 
 function back(req, res, fallback = '/candidates') {
@@ -215,6 +215,7 @@ export function createActionRouter({ pool, config }) {
         decisionThreshold: Number(req.body.decisionThreshold),
         refreshHours: Number(req.body.refreshHours),
         discoveryEnabled: req.body.discoveryEnabled === 'on',
+        processingEnabled: req.body.processingEnabled === 'true' || req.body.processingEnabled === 'on',
         dailyDiscoveryLimit: Number(req.body.dailyDiscoveryLimit),
         perQueryLimit: Number(req.body.perQueryLimit),
         reelsPerCandidate: Number(req.body.reelsPerCandidate)
@@ -236,6 +237,35 @@ export function createActionRouter({ pool, config }) {
       });
     });
     return back(req, res, '/settings?section=automation');
+  });
+
+  router.post('/automation/toggles', async (req, res) => {
+    const allowedSettings = new Set(['discoveryEnabled', 'processingEnabled']);
+    const allowedReturns = new Set(['/candidates', '/bloggers', '/reels', '/queue', '/settings']);
+    const setting = String(req.body.setting || '');
+    const enabledValue = String(req.body.enabled || '');
+    if (!allowedSettings.has(setting) || !['true', 'false'].includes(enabledValue)) {
+      throw Object.assign(new Error('Invalid automation toggle'), { statusCode: 400 });
+    }
+    const enabled = enabledValue === 'true';
+    await withTransaction(pool, async (client) => {
+      await client.query('select pg_advisory_xact_lock($1)', [criteriaWriteLockKey]);
+      const active = (await client.query(`
+        select * from criteria_versions where status='active' limit 1 for update
+      `)).rows[0];
+      if (!active) throw Object.assign(new Error('Active criteria not found'), { statusCode: 409 });
+      const previous = resolveCriteriaAutomation(active.transcript_rules);
+      const updated = validateCriteriaAutomation({ ...previous, [setting]: enabled });
+      await client.query(`
+        update criteria_versions set transcript_rules=$2 where id=$1
+      `, [active.id, withCriteriaAutomation(active.transcript_rules, updated)]);
+      await client.query(`
+        insert into audit_events(action,entity_type,entity_id,old_values,new_values)
+        values ('automation_toggle','criteria_version',$1,$2,$3)
+      `, [active.id, previous, updated]);
+    });
+    const returnTo = allowedReturns.has(req.body.returnTo) ? req.body.returnTo : '/candidates';
+    return back(req, res, returnTo);
   });
 
   router.post('/criteria/:id/activate', async (req, res) => {

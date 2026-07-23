@@ -1,3 +1,7 @@
+<% const headerAutomation = typeof automationToggles !== 'undefined'
+  ? automationToggles
+  : { discoveryEnabled: false, processingEnabled: false }; %>
+<% const headerReturnPath = typeof currentPath !== 'undefined' ? currentPath : '/candidates'; %>
 <header class="topbar">
   <a class="brand" href="/candidates"><span class="brand-mark">IH</span><span>Instagram Hunter</span></a>
   <nav class="tabs" aria-label="<%= t('nav.primary') %>">
@@ -6,6 +10,24 @@
     <a class="tab <%= active === 'content' || active === 'reels' ? 'active' : '' %>" href="/reels"><%= t('content') %></a>
   </nav>
   <div class="top-actions">
+    <div class="header-automation" aria-label="<%= t('automation.controls') %>">
+      <% [
+        { key: 'discoveryEnabled', label: t('automation.discovery'), help: t('automation.discoveryHelp') },
+        { key: 'processingEnabled', label: t('automation.processing'), help: t('automation.processingHelp') }
+      ].forEach((toggle) => { const enabled = Boolean(headerAutomation[toggle.key]); %>
+        <form method="post" action="/automation/toggles" class="inline-form">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <input type="hidden" name="setting" value="<%= toggle.key %>">
+          <input type="hidden" name="enabled" value="<%= enabled ? 'false' : 'true' %>">
+          <input type="hidden" name="returnTo" value="<%= headerReturnPath %>">
+          <button class="automation-toggle <%= enabled ? 'is-on' : 'is-off' %>" role="switch" aria-checked="<%= enabled ? 'true' : 'false' %>" title="<%= toggle.help %>: <%= enabled ? t('automation.on') : t('automation.off') %>">
+            <span class="automation-toggle-label"><%= toggle.label %></span>
+            <span class="automation-switch" aria-hidden="true"><span></span></span>
+            <span class="automation-toggle-state"><%= enabled ? t('automation.on') : t('automation.off') %></span>
+          </button>
+        </form>
+      <% }) %>
+    </div>
     <form method="post" action="/preferences/language" class="inline-form">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <input type="hidden" name="locale" value="<%= locale === 'ru' ? 'en' : 'ru' %>">

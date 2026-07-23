@@ -43,6 +43,15 @@ summary { cursor: pointer; }
 .tab:hover, .tab.active { color: var(--primary); border-color: var(--primary); }
 .top-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 .inline-form { display: inline; }
+.header-automation { display: flex; align-items: center; gap: 6px; padding-right: 9px; border-right: 1px solid var(--line); }
+.automation-toggle { display: flex; align-items: center; gap: 6px; height: 36px; padding: 0 9px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); color: var(--muted); font-size: 11px; font-weight: 750; white-space: nowrap; transition: border-color .16s, background .16s, color .16s; }
+.automation-toggle:hover { border-color: #bfc9d8; background: var(--surface-2); }
+.automation-toggle.is-on { border-color: #b8e4cf; background: var(--success-soft); color: var(--success); }
+.automation-switch { position: relative; display: inline-flex; width: 28px; height: 16px; flex: 0 0 auto; border-radius: 999px; background: #a7b1c0; transition: background .16s; }
+.automation-switch > span { position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(23,32,51,.24); transition: transform .16s; }
+.automation-toggle.is-on .automation-switch { background: var(--success); }
+.automation-toggle.is-on .automation-switch > span { transform: translateX(12px); }
+.automation-toggle-state { min-width: 24px; font-size: 10px; text-align: left; text-transform: uppercase; }
 .icon-button, .text-button { display: grid; place-items: center; min-width: 38px; height: 38px; padding: 0 10px; border: 0; border-radius: 11px; background: transparent; color: var(--muted); font-weight: 750; }
 .icon-button:hover, .text-button:hover { background: var(--surface-2); color: var(--primary); }
 .system-link { display: flex; align-items: center; gap: 7px; min-height: 40px; padding: 0 12px; border-radius: 11px; color: var(--muted); font-size: 13px; font-weight: 750; }
@@ -216,5 +225,9 @@ tbody tr:last-child td { border-bottom: 0; }
 .auth-card h1 { margin: 0; text-align: center; }
 
 @media (max-width: 1200px) {
+  .topbar { width: 100vw; gap: 20px; padding-inline: 20px; }
+  .brand > span:last-child { display: none; }
+  .tab { padding-inline: 12px; }
+  .automation-toggle-state { display: none; }
   .card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }

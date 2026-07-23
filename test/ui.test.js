@@ -22,6 +22,27 @@ test('candidate page presents discovery as the primary workflow and hides techni
   assert.doesNotMatch(html, /Discovery runs|fashion moscow|\/ui\/discovery-runs/);
 });
 
+test('header exposes immediate auto-search and auto-processing switches', async () => {
+  const html = await ejs.renderFile(path.join(views, 'partials/nav.ejs'), {
+    locale: 'ru', csrfToken: 'csrf-token', active: 'candidates', currentPath: '/candidates',
+    t: (key) => ({
+      'automation.discovery': 'Автопоиск',
+      'automation.processing': 'Автообработка',
+      'automation.on': 'Вкл',
+      'automation.off': 'Выкл'
+    })[key] || key,
+    automationToggles: { discoveryEnabled: true, processingEnabled: false }
+  });
+
+  assert.match(html, /action="\/automation\/toggles"/);
+  assert.match(html, /Автопоиск/);
+  assert.match(html, /Автообработка/);
+  assert.match(html, /name="setting" value="discoveryEnabled"/);
+  assert.match(html, /name="setting" value="processingEnabled"/);
+  assert.match(html, /aria-checked="true"/);
+  assert.match(html, /aria-checked="false"/);
+});
+
 test('avatars and reel previews use authenticated same-origin media URLs', async () => {
   const card = await ejs.renderFile(path.join(views, 'partials/account-card.ejs'), {
     locale: 'ru', csrfToken: 'csrf-token', t: (key) => key, mode: 'candidates',
@@ -120,7 +141,7 @@ test('settings keeps LLM prompts in the specialist section and automation in a s
     llmPrompts: { candidateEvaluation: 'ANALYSIS PROMPT', outreachProposal: 'OUTREACH PROMPT' },
     criteriaAutomation: {
       criteriaEnabled: true, decisionThreshold: 10, refreshHours: 24,
-      discoveryEnabled: true, dailyDiscoveryLimit: 20, perQueryLimit: 5,
+      discoveryEnabled: true, processingEnabled: true, dailyDiscoveryLimit: 20, perQueryLimit: 5,
       reelsPerCandidate: 7
     },
     automationStatus: { discovery_used_today: 5, pending_criteria_jobs: 1, last_discovery_at: now },
@@ -140,7 +161,7 @@ test('settings keeps LLM prompts in the specialist section and automation in a s
     title: 'Settings', locale: 'ru', csrfToken: 'csrf-token', active: 'settings', section: 'automation',
     t: (key) => key, criteria: [{ id: 1, version_number: 7, status: 'active', source: 'manual', created_at: now, checklist_markdown: 'criteria', transcript_rules: {} }],
     llmLogs: [], llmPrompts: { candidateEvaluation: 'A', outreachProposal: 'B' },
-    criteriaAutomation: { criteriaEnabled: true, decisionThreshold: 10, refreshHours: 24, discoveryEnabled: true, dailyDiscoveryLimit: 20, perQueryLimit: 5, reelsPerCandidate: 7 },
+    criteriaAutomation: { criteriaEnabled: true, decisionThreshold: 10, refreshHours: 24, discoveryEnabled: true, processingEnabled: true, dailyDiscoveryLimit: 20, perQueryLimit: 5, reelsPerCandidate: 7 },
     automationStatus: { discovery_used_today: 5, pending_criteria_jobs: 1, last_discovery_at: now },
     reelsMaxLimit: 20
   });
@@ -148,6 +169,7 @@ test('settings keeps LLM prompts in the specialist section and automation in a s
   assert.match(automationHtml, /name="decisionThreshold"/);
   assert.match(automationHtml, /name="dailyDiscoveryLimit"/);
   assert.match(automationHtml, /name="reelsPerCandidate"[^>]*value="7"/);
+  assert.match(automationHtml, /name="processingEnabled"[^>]*value="true"/);
   assert.match(automationHtml, /Материалов на кандидата/);
   assert.match(automationHtml, /5 \/ 20/);
 });

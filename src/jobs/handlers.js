@@ -58,11 +58,12 @@ async function handleDiscovery(context, job) {
               [account.id]
             );
             if (!priorPipeline.rowCount) {
-              await startPipelineInTransaction(client, context.config, {
+              const pipeline = await startPipelineInTransaction(client, context.config, {
                 accountId: account.id,
-                runType: 'candidate_enrichment'
+                runType: 'candidate_enrichment',
+                automatic: true
               });
-              counts.processingQueued++;
+              if (!pipeline.skipped) counts.processingQueued++;
             }
           }
         } catch { counts.invalid++; }

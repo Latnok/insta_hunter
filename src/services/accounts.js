@@ -13,7 +13,7 @@ export async function addManualAccount(pool, config, input, sourceNote = null) {
   let pipeline = null;
   if (account.inserted) {
     pipeline = await startPipeline(pool, config, {
-      accountId: account.id, runType: 'candidate_enrichment'
+      accountId: account.id, runType: 'candidate_enrichment', automatic: true
     });
   }
   return { account, pipeline };

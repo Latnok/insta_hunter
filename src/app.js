@@ -13,6 +13,7 @@ import { i18nMiddleware } from './i18n/index.js';
 import { createPageRouter } from './routes/pages.js';
 import { createActionRouter } from './routes/actions.js';
 import { getSchemaStatus } from './db/schema.js';
+import { resolveCriteriaAutomation } from './domain/criteria-automation.js';
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -84,6 +85,18 @@ export function createApp({ config, pool, logger, imageLoader }) {
   app.post('/auth/logout', requireAuth, verifyCsrf, auth.logout);
 
   app.use(requireAuth);
+  app.use(async (req, res, next) => {
+    if (req.method !== 'GET' || !req.accepts('html')) return next();
+    try {
+      const result = await pool.query(`
+        select transcript_rules from criteria_versions where status='active' limit 1
+      `);
+      res.locals.automationToggles = resolveCriteriaAutomation(result.rows[0]?.transcript_rules);
+      return next();
+    } catch (error) {
+      return next(error);
+    }
+  });
   app.use(verifyCsrf);
   app.use(createPageRouter({ pool, config, imageLoader }));
   app.use(createActionRouter({ pool, config }));

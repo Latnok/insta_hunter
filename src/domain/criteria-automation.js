@@ -3,6 +3,7 @@ export const DEFAULT_CRITERIA_AUTOMATION = Object.freeze({
   decisionThreshold: 10,
   refreshHours: 24,
   discoveryEnabled: true,
+  processingEnabled: true,
   dailyDiscoveryLimit: 20,
   perQueryLimit: 5,
   reelsPerCandidate: 3
@@ -19,7 +20,12 @@ export function validateCriteriaAutomation(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('Invalid criteria automation settings');
   }
-  if (typeof value.criteriaEnabled !== 'boolean' || typeof value.discoveryEnabled !== 'boolean') {
+  const processingEnabled = value.processingEnabled ?? DEFAULT_CRITERIA_AUTOMATION.processingEnabled;
+  if (
+    typeof value.criteriaEnabled !== 'boolean'
+    || typeof value.discoveryEnabled !== 'boolean'
+    || typeof processingEnabled !== 'boolean'
+  ) {
     throw new Error('Automation switches must be boolean');
   }
   return {
@@ -27,6 +33,7 @@ export function validateCriteriaAutomation(value) {
     decisionThreshold: integer(value.decisionThreshold, 'decisionThreshold', 1, 100),
     refreshHours: integer(value.refreshHours, 'refreshHours', 1, 168),
     discoveryEnabled: value.discoveryEnabled,
+    processingEnabled,
     dailyDiscoveryLimit: integer(value.dailyDiscoveryLimit, 'dailyDiscoveryLimit', 1, 100),
     perQueryLimit: integer(value.perQueryLimit, 'perQueryLimit', 1, 100),
     reelsPerCandidate: integer(
