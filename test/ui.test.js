@@ -7,16 +7,17 @@ import ejs from 'ejs';
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const views = path.resolve(testDir, '../src/views');
 
-test('candidate page explains discovery and hides the discovery run table', async () => {
+test('candidate page presents discovery as the primary workflow and hides technical runs', async () => {
   const html = await ejs.renderFile(path.join(views, 'accounts.ejs'), {
     title: 'Candidates', locale: 'ru', csrfToken: 'csrf-token', active: 'candidates',
     t: (key) => key, mode: 'candidates', accounts: [], query: {}, aiSearchQueries: [],
     config: { DISCOVERY_MAX_LIMIT: 50, DISCOVERY_DEFAULT_LIMIT: 5 }
   });
 
-  assert.match(html, /Поиск новых блогеров/);
-  assert.match(html, /Поисковый запрос/);
-  assert.match(html, /Предложить запрос через ИИ/);
+  assert.match(html, /Найти новых блогеров/);
+  assert.match(html, /Кого ищем/);
+  assert.match(html, /Помочь составить запрос/);
+  assert.match(html, /Другие способы добавления/);
   assert.match(html, /\/discovery-query-suggestions/);
   assert.doesNotMatch(html, /Discovery runs|fashion moscow|\/ui\/discovery-runs/);
 });
@@ -33,6 +34,7 @@ test('avatars and reel previews use authenticated same-origin media URLs', async
     }
   });
   const reel = await ejs.renderFile(path.join(views, 'partials/reel-drawer.ejs'), {
+    locale: 'ru', t: (key) => key,
     reel: {
       id: 29, username: 'media_creator', thumbnail_url: 'https://cdn.example.invalid/preview.jpg',
       reel_url: 'https://instagram.com/reel/example', transcript_status: 'pending'
@@ -79,18 +81,19 @@ test('approved blogger drawer polls while outreach generation is active', async 
   });
   assert.match(html, /hx-get="\/ui\/accounts\/8"/);
   assert.match(html, /hx-trigger="every 2s"/);
-  assert.match(html, /обновится автоматически/);
+  assert.match(html, /обновятся автоматически/);
 });
 
 test('LLM query suggestion polls safely and exposes generated choices', async () => {
   const template = path.join(views, 'partials/discovery-query-suggestion.ejs');
   const pending = await ejs.renderFile(template, {
-    job: { id: 42, status: 'pending' }, queries: [], csrfToken: 'csrf-token'
+    locale: 'ru', job: { id: 42, status: 'pending' }, queries: [], csrfToken: 'csrf-token'
   });
   assert.match(pending, /\/ui\/discovery-query-suggestions\/42/);
   assert.match(pending, /every 2s/);
 
   const completed = await ejs.renderFile(template, {
+    locale: 'ru',
     job: { id: 42, status: 'succeeded' },
     queries: ['fashion & style "moscow"', 'wildberries looks'],
     csrfToken: 'csrf-token'
@@ -99,11 +102,11 @@ test('LLM query suggestion polls safely and exposes generated choices', async ()
   assert.doesNotMatch(completed, /hx-trigger="every 2s"/);
 });
 
-test('settings exposes both active LLM prompts as editable draft fields', async () => {
+test('settings keeps LLM prompts in the specialist section and automation in a separate section', async () => {
   const now = new Date();
   const html = await ejs.renderFile(path.join(views, 'settings.ejs'), {
     title: 'Settings', locale: 'ru', csrfToken: 'csrf-token', active: 'settings',
-    t: (key) => key,
+    t: (key) => key, section: 'expert',
     criteria: [{
       id: 1, version_number: 7, status: 'active', source: 'manual', created_at: now,
       checklist_markdown: 'criteria', transcript_rules: {
@@ -123,13 +126,20 @@ test('settings exposes both active LLM prompts as editable draft fields', async 
   assert.match(html, /ANALYSIS PROMPT/);
   assert.match(html, /name="outreachProposal"/);
   assert.match(html, /OUTREACH PROMPT/);
-  assert.match(html, /Сохранить как draft/);
-  assert.match(html, /нажмите Activate/);
-  assert.match(html, /активной версии v7/);
-  assert.match(html, /Промпты этой версии/);
-  assert.match(html, /Автоматизация поиска/);
-  assert.match(html, /name="decisionThreshold"/);
-  assert.match(html, /name="dailyDiscoveryLimit"/);
-  assert.match(html, /Сохранить настройки как draft/);
-  assert.match(html, /5 из 20/);
+  assert.match(html, /Сохранить как черновик/);
+  assert.match(html, /Для специалистов/);
+  assert.match(html, /Экспертные настройки/);
+  assert.doesNotMatch(html, /name="decisionThreshold"/);
+
+  const automationHtml = await ejs.renderFile(path.join(views, 'settings.ejs'), {
+    title: 'Settings', locale: 'ru', csrfToken: 'csrf-token', active: 'settings', section: 'automation',
+    t: (key) => key, criteria: [{ id: 1, version_number: 7, status: 'active', source: 'manual', created_at: now, checklist_markdown: 'criteria', transcript_rules: {} }],
+    llmLogs: [], llmPrompts: { candidateEvaluation: 'A', outreachProposal: 'B' },
+    criteriaAutomation: { criteriaEnabled: true, decisionThreshold: 10, refreshHours: 24, discoveryEnabled: true, dailyDiscoveryLimit: 20, perQueryLimit: 5 },
+    automationStatus: { discovery_used_today: 5, pending_criteria_jobs: 1, last_discovery_at: now }
+  });
+  assert.match(automationHtml, /Автоматизация поиска/);
+  assert.match(automationHtml, /name="decisionThreshold"/);
+  assert.match(automationHtml, /name="dailyDiscoveryLimit"/);
+  assert.match(automationHtml, /5 \/ 20/);
 });

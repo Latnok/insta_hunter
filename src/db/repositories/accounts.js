@@ -55,7 +55,8 @@ export async function listAccounts(client, { statuses, search, prioritizeUncerta
            e.recommendation, e.confidence, e.explanation, e.created_at as evaluated_at,
            coalesce(rc.reels_count, 0)::int as reels_count,
            coalesce(rc.useful_reels_count, 0)::int as useful_reels_count,
-           pr.status as pipeline_status
+           pr.status as pipeline_status,
+           op.status as outreach_status
     from instagram_accounts a
     left join account_profiles p on p.account_id = a.id
     left join lateral (select * from evaluations where account_id = a.id order by created_at desc limit 1) e on true
@@ -67,6 +68,9 @@ export async function listAccounts(client, { statuses, search, prioritizeUncerta
     left join lateral (
       select status from pipeline_runs where account_id = a.id order by created_at desc limit 1
     ) pr on true
+    left join lateral (
+      select status from outreach_proposals where account_id = a.id order by created_at desc limit 1
+    ) op on true
     where a.lifecycle_status = any($1::text[]) ${searchSql}
     order by
       ${prioritizeUncertain ? `case when e.recommendation='needs_manual_review' then 0 when e.confidence is not null then 1 else 2 end,

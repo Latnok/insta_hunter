@@ -1,21 +1,27 @@
 <header class="topbar">
   <a class="brand" href="/candidates"><span class="brand-mark">IH</span><span>Instagram Hunter</span></a>
-  <nav class="tabs" aria-label="Primary">
+  <nav class="tabs" aria-label="<%= t('nav.primary') %>">
     <a class="tab <%= active === 'candidates' ? 'active' : '' %>" href="/candidates"><%= t('candidates') %></a>
     <a class="tab <%= active === 'bloggers' ? 'active' : '' %>" href="/bloggers"><%= t('bloggers') %></a>
-    <a class="tab <%= active === 'reels' ? 'active' : '' %>" href="/reels"><%= t('reels') %></a>
-    <a class="tab <%= active === 'queue' ? 'active' : '' %>" href="/queue"><%= t('queue') %></a>
+    <a class="tab <%= active === 'content' || active === 'reels' ? 'active' : '' %>" href="/reels"><%= t('content') %></a>
   </nav>
   <div class="top-actions">
     <form method="post" action="/preferences/language" class="inline-form">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <input type="hidden" name="locale" value="<%= locale === 'ru' ? 'en' : 'ru' %>">
-      <button class="icon-button" aria-label="Change language"><%= locale.toUpperCase() %></button>
+      <button class="text-button" aria-label="<%= t('nav.language') %>"><%= locale.toUpperCase() %></button>
     </form>
-    <a class="icon-button <%= active === 'settings' ? 'active' : '' %>" href="/settings" aria-label="<%= t('settings') %>">⚙</a>
+    <a class="system-link <%= ['queue','settings'].includes(active) ? 'active' : '' %>" href="/queue"><span aria-hidden="true">⚙</span><span><%= t('system') %></span></a>
     <form method="post" action="/auth/logout" class="inline-form">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-      <button class="icon-button" aria-label="<%= t('logout') %>">↪</button>
+      <button class="icon-button" aria-label="<%= t('logout') %>" title="<%= t('logout') %>">↪</button>
     </form>
   </div>
 </header>
+<% if (['queue','settings'].includes(active)) { %>
+  <nav class="subnav" aria-label="<%= t('nav.system') %>">
+    <a class="subnav-link <%= active === 'queue' ? 'active' : '' %>" href="/queue"><%= t('queue') %></a>
+    <a class="subnav-link <%= active === 'settings' ? 'active' : '' %>" href="/settings"><%= t('settings') %></a>
+  </nav>
+<% } %>
+<% if (typeof notice !== 'undefined' && notice) { %><div class="flash flash-<%= notice.type || 'success' %>" role="status"><span><%= notice.message %></span><button class="icon-button" type="button" data-dismiss-flash aria-label="<%= t('close') %>">×</button></div><% } %>

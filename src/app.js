@@ -62,6 +62,8 @@ export function createApp({ config, pool, logger, imageLoader }) {
     res.locals.csrfToken = req.csrfToken;
     res.locals.currentPath = req.path;
     res.locals.authenticated = Boolean(req.session?.authenticated);
+    res.locals.notice = req.session?.notice || null;
+    if (req.session?.notice) delete req.session.notice;
     next();
   });
 
@@ -86,15 +88,15 @@ export function createApp({ config, pool, logger, imageLoader }) {
   app.use(createPageRouter({ pool, config, imageLoader }));
   app.use(createActionRouter({ pool, config }));
 
-  app.use((req, res) => res.status(404).render('error', { status: 404, message: 'Not found' }));
+  app.use((req, res) => res.status(404).render('error', { status: 404, message: req.t('error.notFound') }));
   app.use((error, req, res, _next) => {
     req.log?.error({ err: error }, 'request failed');
     const status = error.statusCode || (error.code === '23505' ? 409 : 500);
     if (req.get('HX-Request')) {
-      const message = status >= 500 ? `Internal server error. Request ID: ${req.id}` : error.message;
+      const message = status >= 500 ? `${req.t('error.internal')}. Request ID: ${req.id}` : error.message;
       return res.status(status).send(message);
     }
-    return res.status(status).render('error', { status, message: status >= 500 ? 'Internal server error' : error.message });
+    return res.status(status).render('error', { status, message: status >= 500 ? req.t('error.internal') : error.message });
   });
   return app;
 }

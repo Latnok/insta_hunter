@@ -1,69 +1,12 @@
-<div class="drawer-header">
-  <div><small><%= account.lifecycle_status %></small><h2>@<%= account.username %></h2></div>
-  <button class="icon-button" type="button" data-close-drawer>×</button>
-</div>
+<% const copy = locale === 'ru' ? { profile: 'Профиль', instagram: 'Открыть Instagram', evaluation: 'Оценка ИИ', noEvaluation: 'Оценка ещё не готова. Запустите анализ и вернитесь позже.', why: 'Почему ИИ сделал такой вывод', materials: 'Материалы для оценки', noMaterials: 'Материалы пока не загружены', collaboration: 'Предложение о сотрудничестве', preparing: 'ИИ готовит персональное предложение. Данные обновятся автоматически.', waiting: 'Ждёт утверждения', whyWrite: 'Почему пишем именно этому блогеру', message: 'Текст для блогера', save: 'Сохранить правки', approveText: 'Утвердить этот текст', rejectText: 'Отклонить', noProposal: 'Предложение ещё не подготовлено.', prepare: 'Подготовить предложение', another: 'Предложить другой вариант', update: 'Обновление данных', contentAmount: 'Сколько последних материалов проверить', force: 'Загрузить заново, не используя сохранённые данные', technical: 'Технические сведения', recentJobs: 'Последние задачи', audit: 'История действий', rejectReason: 'Комментарий к отклонению (необязательно)', confirmReject: 'Отклонить кандидата', decision: 'Решение по кандидату' } : { profile: 'Profile', instagram: 'Open Instagram', evaluation: 'AI evaluation', noEvaluation: 'Evaluation is not ready yet. Run analysis and return later.', why: 'Why AI reached this conclusion', materials: 'Evaluation content', noMaterials: 'Content has not been loaded yet', collaboration: 'Collaboration proposal', preparing: 'AI is preparing a personalized proposal. This view will update automatically.', waiting: 'Waiting for approval', whyWrite: 'Why we are contacting this creator', message: 'Message to creator', save: 'Save changes', approveText: 'Approve this message', rejectText: 'Reject', noProposal: 'No proposal has been prepared yet.', prepare: 'Prepare proposal', another: 'Suggest another version', update: 'Refresh data', contentAmount: 'How many recent items to review', force: 'Download again instead of using saved data', technical: 'Technical details', recentJobs: 'Recent tasks', audit: 'Activity history', rejectReason: 'Rejection note (optional)', confirmReject: 'Reject candidate', decision: 'Candidate decision' }; const recommendationKey = account.recommendation?.replace('recommended_', '') || ''; %>
+<div class="drawer-header"><div><span class="chip status-<%= account.lifecycle_status %>"><%= t(`status.${account.lifecycle_status}`) %></span><h2>@<%= account.username %></h2></div><button class="icon-button" type="button" data-close-drawer aria-label="<%= t('close') %>">×</button></div>
 <div class="drawer-body">
-  <section class="profile-hero">
-    <% if (account.avatar_url) { %><img class="avatar large" src="/media/accounts/<%= account.id %>/avatar" alt=""><% } %>
-    <div><strong><%= account.display_name || '—' %></strong><p><%= account.bio || '—' %></p><a href="<%= account.instagram_url %>" target="_blank" rel="noopener">Instagram ↗</a></div>
-  </section>
-  <div class="metrics"><span><strong><%= account.followers ?? '—' %></strong><small>followers</small></span><span><strong><%= account.reels_count %></strong><small>reels</small></span><span><strong><%= account.useful_reels_count %></strong><small>useful</small></span></div>
-  <% if (account.recommendation) { %>
-    <section><h3>LLM evaluation</h3><div class="chips"><span class="chip recommendation"><%= account.recommendation %> · <%= account.confidence %>%</span></div><p><%= account.explanation %></p></section>
-  <% } else { %><section class="notice">LLM evaluation is not available yet.</section><% } %>
-  <% if (account.lifecycle_status === 'candidate') { %>
-    <section><h3>Pipeline</h3><form method="post" action="/accounts/<%= account.id %>/pipeline" class="stack">
-      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-      <label>Reels <input type="number" name="reelsLimit" min="1" max="<%= config.REELS_MAX_LIMIT %>" value="<%= config.REELS_DEFAULT_LIMIT %>"></label>
-      <label><input type="checkbox" name="forceRefresh"> Force refresh</label>
-      <button class="button primary"><%= t('process') %></button>
-    </form></section>
-  <% } %>
-  <% if (account.lifecycle_status === 'approved') { %>
-    <% const latestOutreach = outreach?.[0]; const outreachJob = jobs.find((job) => job.job_type === 'draft_outreach'); const activeOutreachJob = jobs.find((job) => job.job_type === 'draft_outreach' && ['pending','running','retry_wait'].includes(job.status)); %>
-    <section class="outreach-section">
-      <h3>Предложение о сотрудничестве</h3>
-      <% if (activeOutreachJob && (!latestOutreach || String(latestOutreach.job_id) !== String(activeOutreachJob.id))) { %>
-        <div hx-get="/ui/accounts/<%= account.id %>" hx-target="#drawer" hx-swap="innerHTML" hx-trigger="every 2s">
-          <p class="notice">ИИ готовит персональное предложение. Карточка обновится автоматически.</p>
-        </div>
-      <% } else if (latestOutreach) { %>
-        <div class="chips"><span class="chip status-<%= latestOutreach.status %>"><%= latestOutreach.status === 'draft' ? 'ждёт утверждения' : latestOutreach.status %></span></div>
-        <p class="outreach-reason"><strong>Почему пишем именно этому блогеру</strong><br><%= latestOutreach.personalization_reason %></p>
-        <% if (latestOutreach.status === 'draft') { %>
-          <form method="post" action="/outreach/<%= latestOutreach.id %>/save" class="stack">
-            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-            <label>Текст для блогера<textarea class="outreach-message" name="messageText" rows="10" maxlength="5000" required><%= latestOutreach.message_text %></textarea></label>
-            <div class="outreach-actions">
-              <button class="button secondary">Сохранить правки</button>
-              <button class="button success" formaction="/outreach/<%= latestOutreach.id %>/approve">Утвердить этот текст</button>
-              <button class="button danger" formnovalidate formaction="/outreach/<%= latestOutreach.id %>/reject">Отклонить</button>
-            </div>
-          </form>
-        <% } else { %>
-          <div class="outreach-message-static"><%= latestOutreach.message_text %></div>
-        <% } %>
-      <% } else if (outreachJob?.status === 'failed') { %>
-        <p class="error-text">Не удалось подготовить предложение: <%= outreachJob.error_summary || 'неизвестная ошибка' %></p>
-      <% } else { %>
-        <p class="muted">Предложение ещё не подготовлено.</p>
-      <% } %>
-      <form method="post" action="/accounts/<%= account.id %>/outreach/regenerate" data-confirm="Подготовить новый вариант? Текущий неутверждённый черновик будет заменён.">
-        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-        <button class="button secondary"><%= latestOutreach ? 'Предложить другой вариант' : 'Подготовить предложение' %></button>
-      </form>
-    </section>
-    <section><h3>Refresh</h3><form method="post" action="/accounts/<%= account.id %>/pipeline" class="stack">
-      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-      <label>Reels <input type="number" name="reelsLimit" min="1" max="<%= config.REELS_MAX_LIMIT %>" value="<%= config.REELS_DEFAULT_LIMIT %>"></label>
-      <label><input type="checkbox" name="forceRefresh"> Force refresh</label>
-      <button class="button primary"><%= t('refresh') %></button>
-    </form></section>
-  <% } %>
-  <section><h3>Reels</h3>
-    <% if (!reels.length) { %><p class="muted"><%= t('noData') %></p><% } %>
-    <% reels.forEach((reel) => { %><div class="list-row"><div><strong><%= reel.shortcode || reel.instagram_media_id %></strong><small><%= reel.transcript_status %> · <%= reel.transcript_quality || 'unclassified' %></small></div><a href="<%= reel.reel_url %>" target="_blank" rel="noopener">↗</a></div><% }) %>
-  </section>
-  <section><h3>Recent jobs</h3><% jobs.forEach((job) => { %><div class="list-row"><span><%= job.job_type %></span><span class="chip"><%= job.status %></span></div><% }) %></section>
-  <section><h3>Audit</h3><% audit.forEach((event) => { %><div class="list-row"><span><%= event.action %></span><time data-utc="<%= event.created_at.toISOString() %>"></time></div><% }) %></section>
+  <section class="profile-hero"><% if (account.avatar_url) { %><img class="avatar large" src="/media/accounts/<%= account.id %>/avatar" alt=""><% } else { %><span class="avatar large placeholder">@</span><% } %><div><span class="eyebrow"><%= copy.profile %></span><strong><%= account.display_name || '—' %></strong><p><%= account.bio || '—' %></p><a href="<%= account.instagram_url %>" target="_blank" rel="noopener"><%= copy.instagram %> ↗</a></div></section>
+  <div class="metrics metrics-large"><span><strong><%= account.followers == null ? '—' : Number(account.followers).toLocaleString(locale) %></strong><small><%= t('metric.followers') %></small></span><span><strong><%= account.reels_count %></strong><small><%= t('metric.reels') %></small></span><span><strong><%= account.useful_reels_count %></strong><small><%= t('metric.useful') %></small></span></div>
+  <section><div class="section-heading"><div><h3><%= copy.evaluation %></h3></div><% if (account.recommendation) { %><span class="score"><%= account.confidence %>%</span><% } %></div><% if (account.recommendation) { %><div class="recommendation-box"><strong><%= t(`recommendation.${recommendationKey}`) %></strong><p><%= account.explanation %></p></div><% } else { %><div class="notice"><%= copy.noEvaluation %></div><% } %></section>
+  <% if (account.lifecycle_status === 'approved') { const latestOutreach = outreach?.[0]; const outreachJob = jobs.find((job) => job.job_type === 'draft_outreach'); const activeOutreachJob = jobs.find((job) => job.job_type === 'draft_outreach' && ['pending','running','retry_wait'].includes(job.status)); %><section class="outreach-section"><h3><%= copy.collaboration %></h3><% if (activeOutreachJob && (!latestOutreach || String(latestOutreach.job_id) !== String(activeOutreachJob.id))) { %><div hx-get="/ui/accounts/<%= account.id %>" hx-target="#drawer" hx-swap="innerHTML" hx-trigger="every 2s"><p class="notice"><%= copy.preparing %></p></div><% } else if (latestOutreach) { %><span class="chip status-<%= latestOutreach.status %>"><%= latestOutreach.status === 'draft' ? copy.waiting : t(`status.${latestOutreach.status}`) %></span><p class="outreach-reason"><strong><%= copy.whyWrite %></strong><br><%= latestOutreach.personalization_reason %></p><% if (latestOutreach.status === 'draft') { %><form method="post" action="/outreach/<%= latestOutreach.id %>/save" class="stack"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><label><span><%= copy.message %></span><textarea class="outreach-message" name="messageText" rows="10" maxlength="5000" required><%= latestOutreach.message_text %></textarea></label><div class="outreach-actions"><button class="button secondary"><%= copy.save %></button><button class="button success" formaction="/outreach/<%= latestOutreach.id %>/approve"><%= copy.approveText %></button><button class="button danger" formnovalidate formaction="/outreach/<%= latestOutreach.id %>/reject"><%= copy.rejectText %></button></div></form><% } else { %><div class="outreach-message-static"><%= latestOutreach.message_text %></div><% } %><% } else if (outreachJob?.status === 'failed') { %><p class="error-text"><%= outreachJob.error_summary %></p><% } else { %><p class="muted"><%= copy.noProposal %></p><% } %><form method="post" action="/accounts/<%= account.id %>/outreach/regenerate" data-confirm="<%= latestOutreach ? copy.another : copy.prepare %>?"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="button tertiary"><%= latestOutreach ? copy.another : copy.prepare %></button></form></section><% } %>
+  <section><h3><%= copy.materials %></h3><% if (!reels.length) { %><p class="muted"><%= copy.noMaterials %></p><% } %><% reels.forEach((reel) => { %><div class="list-row"><div><strong><%= reel.shortcode || reel.instagram_media_id %></strong><small><%= t(`status.${reel.transcript_status}`) %> · <%= t(`quality.${reel.transcript_quality || 'unclassified'}`) %></small></div><a href="<%= reel.reel_url %>" target="_blank" rel="noopener" aria-label="Instagram">↗</a></div><% }) %></section>
+  <% if (account.lifecycle_status === 'candidate' || account.lifecycle_status === 'approved') { %><section><details><summary class="details-heading"><strong><%= copy.update %></strong><small><%= locale === 'ru' ? 'Повторно загрузить профиль и материалы' : 'Reload profile and content' %></small></summary><form method="post" action="/accounts/<%= account.id %>/pipeline" class="stack inset-form"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><label><span><%= copy.contentAmount %></span><input type="number" name="reelsLimit" min="1" max="<%= config.REELS_MAX_LIMIT %>" value="<%= config.REELS_DEFAULT_LIMIT %>"></label><label class="check"><input type="checkbox" name="forceRefresh"><span><%= copy.force %></span></label><button class="button secondary"><%= account.lifecycle_status === 'candidate' ? t('process') : t('refresh') %></button></form></details></section><% } %>
+  <section><details><summary class="details-heading"><strong><%= copy.technical %></strong><small><%= jobs.length %> · <%= audit.length %></small></summary><div class="inset-form"><h3><%= copy.recentJobs %></h3><% jobs.forEach((job) => { %><div class="list-row"><span><%= t(`job.${job.job_type}`) %></span><span class="chip status-<%= job.status %>"><%= t(`status.${job.status}`) %></span></div><% }) %><h3><%= copy.audit %></h3><% audit.forEach((event) => { %><div class="list-row"><span><%= event.action %></span><time data-utc="<%= event.created_at.toISOString() %>"></time></div><% }) %></div></details></section>
 </div>
+<% if (account.lifecycle_status === 'candidate' && account.recommendation) { %><div class="drawer-footer"><div><strong><%= copy.decision %></strong><small><%= t(`recommendation.${recommendationKey}`) %></small></div><form method="post" action="/accounts/<%= account.id %>/approve"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="button success"><%= t('approve') %></button></form><details class="reject-popover"><summary class="button danger"><%= t('reject') %></summary><form method="post" action="/accounts/<%= account.id %>/reject" class="stack"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><label><span><%= copy.rejectReason %></span><textarea name="reason" rows="3"></textarea></label><button class="button danger"><%= copy.confirmReject %></button></form></details></div><% } %>

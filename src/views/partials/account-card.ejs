@@ -1,49 +1,25 @@
+<% const cardCopy = locale === 'ru' ? { open: 'Открыть профиль', analysisNeeded: 'Нужно запустить анализ', analyzing: 'Идёт сбор и анализ данных', ready: 'Можно принять решение', manual: 'Нужна ваша проверка', failed: 'Анализ завершился с ошибкой', archived: 'Профиль находится в архиве', outreachDraft: 'Сообщение ждёт проверки', outreachApproved: 'Сообщение утверждено', outreachRejected: 'Сообщение отклонено', outreachPending: 'Сообщение готовится', outreachNone: 'Предложение ещё не подготовлено' } : { open: 'Open profile', analysisNeeded: 'Analysis needs to be started', analyzing: 'Collecting and analyzing data', ready: 'Ready for a decision', manual: 'Your review is needed', failed: 'Analysis failed', archived: 'Profile is archived', outreachDraft: 'Message is waiting for review', outreachApproved: 'Message approved', outreachRejected: 'Message rejected', outreachPending: 'Message is being prepared', outreachNone: 'No proposal prepared yet' };
+const pipelineActive = ['pending','running','retry_wait'].includes(account.pipeline_status);
+let stateTone = 'neutral'; let stateText = cardCopy.analysisNeeded;
+if (mode === 'bloggers') { stateText = account.lifecycle_status === 'archived' ? cardCopy.archived : ({ draft: cardCopy.outreachDraft, approved: cardCopy.outreachApproved, rejected: cardCopy.outreachRejected }[account.outreach_status] || (pipelineActive ? cardCopy.outreachPending : cardCopy.outreachNone)); stateTone = account.outreach_status === 'draft' ? 'warning' : account.outreach_status === 'approved' ? 'success' : 'neutral'; }
+else if (account.pipeline_status === 'failed') { stateText = cardCopy.failed; stateTone = 'danger'; }
+else if (pipelineActive) { stateText = cardCopy.analyzing; stateTone = 'progress'; }
+else if (account.recommendation === 'needs_manual_review') { stateText = cardCopy.manual; stateTone = 'warning'; }
+else if (account.recommendation) { stateText = cardCopy.ready; stateTone = 'success'; }
+const recommendationKey = account.recommendation?.replace('recommended_', '') || '';
+%>
 <article class="card account-card">
-  <button class="card-open" hx-get="/ui/accounts/<%= account.id %>" hx-target="#drawer" hx-swap="innerHTML" aria-label="Open <%= account.username %>">
-    <div class="avatar-wrap">
-      <% if (account.avatar_url) { %><img class="avatar" src="/media/accounts/<%= account.id %>/avatar" alt="" loading="lazy"><% } else { %><span class="avatar placeholder">@</span><% } %>
-      <span class="status-dot <%= account.profile_status || 'unknown' %>"></span>
-    </div>
-    <div class="card-main">
-      <strong>@<%= account.username %></strong>
-      <span class="muted one-line"><%= account.display_name || account.bio || '—' %></span>
-    </div>
+  <button class="card-open account-summary" hx-get="/ui/accounts/<%= account.id %>" hx-target="#drawer" hx-swap="innerHTML" aria-label="<%= cardCopy.open %> @<%= account.username %>">
+    <div class="avatar-wrap"><% if (account.avatar_url) { %><img class="avatar" src="/media/accounts/<%= account.id %>/avatar" alt="" loading="lazy"><% } else { %><span class="avatar placeholder">@</span><% } %><span class="status-dot <%= account.profile_status || 'unknown' %>"></span></div>
+    <div class="card-main"><strong>@<%= account.username %></strong><span class="muted one-line"><%= account.display_name || account.bio || '—' %></span></div><span class="open-arrow" aria-hidden="true">→</span>
   </button>
-  <div class="metrics">
-    <span><strong><%= account.followers == null ? '—' : Number(account.followers).toLocaleString(locale) %></strong><small>followers</small></span>
-    <span><strong><%= account.reels_count %></strong><small>reels</small></span>
-    <span><strong><%= account.useful_reels_count %></strong><small>useful</small></span>
-  </div>
-  <div class="chips">
-    <span class="chip status-<%= account.lifecycle_status %>"><%= account.lifecycle_status %></span>
-    <% if (account.pipeline_status) { %><span class="chip"><%= account.pipeline_status %></span><% } %>
-    <% if (account.is_stale) { %><span class="chip">stale</span><% } %>
-    <% if (account.recommendation) { %><span class="chip recommendation"><%= account.recommendation.replace('recommended_', '') %> · <%= account.confidence %>%</span><% } %>
-  </div>
+  <div class="metrics"><span><strong><%= account.followers == null ? '—' : Number(account.followers).toLocaleString(locale) %></strong><small><%= t('metric.followers') %></small></span><span><strong><%= account.reels_count %></strong><small><%= t('metric.reels') %></small></span><span><strong><%= account.useful_reels_count %></strong><small><%= t('metric.useful') %></small></span></div>
+  <div class="workflow-state state-<%= stateTone %>"><span class="state-dot"></span><span><%= stateText %></span></div>
+  <% if (account.recommendation) { %><div class="recommendation-line"><span><%= t(`recommendation.${recommendationKey}`) %></span><strong><%= account.confidence %>%</strong></div><% } %>
   <div class="card-actions">
-    <% if (mode === 'candidates' && account.lifecycle_status === 'candidate') { %>
-      <form method="post" action="/accounts/<%= account.id %>/pipeline">
-        <input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="reelsLimit" value="<%= config.REELS_DEFAULT_LIMIT %>">
-        <button class="button secondary"><%= t('process') %></button>
-      </form>
-      <form method="post" action="/accounts/<%= account.id %>/approve" data-confirm="Approve @<%= account.username %>?">
-        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-        <button class="button success" <%= account.recommendation ? '' : 'disabled' %>><%= t('approve') %></button>
-      </form>
-      <form method="post" action="/accounts/<%= account.id %>/reject" data-confirm="Reject @<%= account.username %>?">
-        <input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="reason" value="Rejected from candidate card">
-        <button class="button danger"><%= t('reject') %></button>
-      </form>
-    <% } %>
-    <% if (mode === 'bloggers' && account.lifecycle_status === 'approved') { %>
-      <form method="post" action="/accounts/<%= account.id %>/archive" data-confirm="Archive @<%= account.username %>?">
-        <input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="button secondary"><%= t('archive') %></button>
-      </form>
-    <% } %>
-    <% if (mode === 'bloggers' && account.lifecycle_status === 'archived') { %>
-      <form method="post" action="/accounts/<%= account.id %>/restore">
-        <input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="button secondary"><%= t('restore') %></button>
-      </form>
-    <% } %>
+    <% if (mode === 'candidates' && account.lifecycle_status === 'candidate' && (!account.recommendation || account.pipeline_status === 'failed')) { %><form method="post" action="/accounts/<%= account.id %>/pipeline"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="reelsLimit" value="<%= config.REELS_DEFAULT_LIMIT %>"><button class="button primary full" <%= pipelineActive ? 'disabled' : '' %>><%= pipelineActive ? stateText : t('process') %></button></form><% } %>
+    <% if (mode === 'candidates' && account.lifecycle_status === 'candidate' && account.recommendation && account.pipeline_status !== 'failed') { %><form method="post" action="/accounts/<%= account.id %>/approve" data-confirm="<%= locale === 'ru' ? 'Одобрить' : 'Approve' %> @<%= account.username %>?"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="button success"><%= t('approve') %></button></form><form method="post" action="/accounts/<%= account.id %>/reject" data-confirm="<%= locale === 'ru' ? 'Отклонить' : 'Reject' %> @<%= account.username %>?"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="reason" value="Rejected from candidate card"><button class="button danger"><%= t('reject') %></button></form><% } %>
+    <% if (mode === 'bloggers' && account.lifecycle_status === 'archived') { %><form method="post" action="/accounts/<%= account.id %>/restore"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="button secondary full"><%= t('restore') %></button></form><% } %>
   </div>
+  <% if (mode === 'bloggers' && account.lifecycle_status === 'approved') { %><details class="card-more"><summary><%= locale === 'ru' ? 'Другие действия' : 'More actions' %></summary><form method="post" action="/accounts/<%= account.id %>/archive" data-confirm="<%= t('archive') %> @<%= account.username %>?"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="button tertiary"><%= t('archive') %></button></form></details><% } %>
 </article>

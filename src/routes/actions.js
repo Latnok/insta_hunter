@@ -14,7 +14,8 @@ import { validateLlmPrompts, withLlmPrompts } from '../domain/llm-prompts.js';
 import { validateCriteriaAutomation, withCriteriaAutomation } from '../domain/criteria-automation.js';
 import { enqueueCriteriaProposal as enqueueCriteriaProposalJob } from '../services/automation.js';
 
-function back(res, fallback = '/candidates') {
+function back(req, res, fallback = '/candidates') {
+  req.session.notice = { type: 'success', message: req.t('notice.saved') };
   res.set('HX-Redirect', fallback);
   return res.redirect(303, fallback);
 }
@@ -74,12 +75,12 @@ export function createActionRouter({ pool, config }) {
 
   router.post('/accounts', async (req, res) => {
     await addManualAccount(pool, config, req.body.account, req.body.sourceNote || null);
-    return back(res);
+    return back(req, res);
   });
 
   router.post('/discovery-runs', async (req, res) => {
     await createDiscoveryRun(pool, config, { query: req.body.query, limit: req.body.limit });
-    return back(res);
+    return back(req, res);
   });
 
   router.post('/discovery-query-suggestions', async (req, res) => {
@@ -87,7 +88,7 @@ export function createActionRouter({ pool, config }) {
     if (req.get('HX-Request')) {
       return res.render('partials/discovery-query-suggestion', { job, queries: [] });
     }
-    return back(res);
+    return back(req, res);
   });
 
   router.post('/imports/csv/preview', csvUploadMiddleware(upload), async (req, res) => {
@@ -109,7 +110,7 @@ export function createActionRouter({ pool, config }) {
     }
     await commitCsv(pool, config, { previewId, version, preview: entry.preview });
     delete req.session.csvPreviews[previewId];
-    return back(res);
+    return back(req, res);
   });
 
   router.post('/accounts/:id/pipeline', async (req, res) => {
@@ -120,39 +121,39 @@ export function createActionRouter({ pool, config }) {
       accountId: req.params.id, runType, reelsLimit: req.body.reelsLimit,
       forceRefresh: req.body.forceRefresh === 'true' || req.body.forceRefresh === 'on'
     });
-    return back(res, runType === 'blogger_refresh' ? '/bloggers' : '/candidates');
+    return back(req, res, runType === 'blogger_refresh' ? '/bloggers' : '/candidates');
   });
 
-  router.post('/accounts/:id/approve', async (req, res) => { await approveAccount(pool, req.params.id, requestMeta(req), config); return back(res); });
-  router.post('/accounts/:id/reject', async (req, res) => { await rejectAccount(pool, req.params.id, req.body.reason || null, requestMeta(req), config); return back(res); });
-  router.post('/accounts/:id/archive', async (req, res) => { await archiveAccount(pool, req.params.id, req.body.reason || null, requestMeta(req)); return back(res, '/bloggers'); });
-  router.post('/accounts/:id/restore', async (req, res) => { await restoreAccount(pool, req.params.id, requestMeta(req)); return back(res, '/bloggers?status=archived'); });
+  router.post('/accounts/:id/approve', async (req, res) => { await approveAccount(pool, req.params.id, requestMeta(req), config); return back(req, res); });
+  router.post('/accounts/:id/reject', async (req, res) => { await rejectAccount(pool, req.params.id, req.body.reason || null, requestMeta(req), config); return back(req, res); });
+  router.post('/accounts/:id/archive', async (req, res) => { await archiveAccount(pool, req.params.id, req.body.reason || null, requestMeta(req)); return back(req, res, '/bloggers'); });
+  router.post('/accounts/:id/restore', async (req, res) => { await restoreAccount(pool, req.params.id, requestMeta(req)); return back(req, res, '/bloggers?status=archived'); });
 
   router.post('/outreach/:id/save', async (req, res) => {
     await saveOutreachDraft(pool, req.params.id, req.body.messageText, requestMeta(req));
-    return back(res, '/bloggers');
+    return back(req, res, '/bloggers');
   });
   router.post('/outreach/:id/approve', async (req, res) => {
     await decideOutreachDraft(pool, req.params.id, 'approved', requestMeta(req), req.body.messageText);
-    return back(res, '/bloggers');
+    return back(req, res, '/bloggers');
   });
   router.post('/outreach/:id/reject', async (req, res) => {
     await decideOutreachDraft(pool, req.params.id, 'rejected', requestMeta(req));
-    return back(res, '/bloggers');
+    return back(req, res, '/bloggers');
   });
   router.post('/accounts/:id/outreach/regenerate', async (req, res) => {
     await regenerateOutreachDraft(pool, config, req.params.id, requestMeta(req));
-    return back(res, '/bloggers');
+    return back(req, res, '/bloggers');
   });
 
   router.post('/jobs/:id/retry', async (req, res) => {
     await retryJob(pool, req.params.id);
-    return back(res, '/queue');
+    return back(req, res, '/queue');
   });
 
   router.post('/jobs/:id/cancel', async (req, res) => {
     await cancelJob(pool, req.params.id);
-    return back(res, '/queue');
+    return back(req, res, '/queue');
   });
 
   router.post('/criteria/drafts', async (req, res) => {
@@ -172,12 +173,12 @@ export function createActionRouter({ pool, config }) {
       source: 'manual',
       diffSummary: 'Manual draft'
     }));
-    return back(res, '/settings');
+    return back(req, res, '/settings?section=criteria');
   });
 
-  router.post('/criteria/proposals', async (_req, res) => {
+  router.post('/criteria/proposals', async (req, res) => {
     await enqueueCriteriaProposal(pool, config);
-    return back(res, '/settings');
+    return back(req, res, '/settings');
   });
 
   router.post('/prompts/drafts', async (req, res) => {
@@ -203,7 +204,7 @@ export function createActionRouter({ pool, config }) {
         diffSummary: 'LLM prompts updated'
       });
     });
-    return back(res, '/settings');
+    return back(req, res, '/settings?section=expert');
   });
 
   router.post('/automation/drafts', async (req, res) => {
@@ -233,7 +234,7 @@ export function createActionRouter({ pool, config }) {
         diffSummary: 'Criteria automation settings updated'
       });
     });
-    return back(res, '/settings');
+    return back(req, res, '/settings?section=automation');
   });
 
   router.post('/criteria/:id/activate', async (req, res) => {
@@ -246,19 +247,19 @@ export function createActionRouter({ pool, config }) {
       await client.query(`update criteria_versions set status='active', activated_at=now() where id=$1`, [req.params.id]);
       await client.query(`insert into audit_events(action,entity_type,entity_id,new_values) values ('criteria_activate','criteria_version',$1,$2)`, [req.params.id, draft.rows[0]]);
     });
-    return back(res, '/settings');
+    return back(req, res, '/settings');
   });
 
   router.post('/criteria/:id/reject', async (req, res) => {
     await pool.query(`update criteria_versions set status='rejected', rejected_at=now() where id=$1 and status='draft'`, [req.params.id]);
-    return back(res, '/settings');
+    return back(req, res, '/settings');
   });
 
   router.post('/preferences/language', (req, res) => {
     const locale = req.body.locale === 'ru' ? 'ru' : 'en';
     req.session.locale = locale;
     res.cookie('locale', locale, { maxAge: 365 * 24 * 60 * 60 * 1000, sameSite: 'lax', secure: config.isProduction });
-    return back(res, req.get('referer') || '/candidates');
+    return back(req, res, req.get('referer') || '/candidates');
   });
 
   return router;

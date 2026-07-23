@@ -75,16 +75,25 @@ export function createPageRouter({ pool, config, imageLoader = downloadImage }) 
   router.get('/reels', async (req, res) => {
     const query = parseListQuery(req.query, { qualities: transcriptQualities });
     const reels = await listReels(pool, { search: query.search, quality: query.quality, limit: pageSize, offset: query.offset });
-    res.render('reels', { title: req.t('reels'), active: 'reels', reels, query });
+    res.render('reels', { title: req.t('content'), active: 'content', reels, query });
   });
 
   router.get('/queue', async (req, res) => {
     const query = parseListQuery(req.query, { statuses: jobStatuses, types: jobTypes });
     const jobs = await listJobs(pool, { status: query.status, jobType: query.jobType, limit: 50, offset: query.offset });
-    res.render('queue', { title: req.t('queue'), active: 'queue', jobs, query, jobTypes });
+    const jobSummary = (await pool.query(`
+      select
+        count(*) filter (where status='failed')::int as failed,
+        count(*) filter (where status in ('pending','running','retry_wait'))::int as active,
+        count(*) filter (where status='succeeded' and finished_at >= now() - interval '24 hours')::int as completed_today
+      from jobs
+    `)).rows[0];
+    res.render('queue', { title: req.t('queue'), active: 'queue', jobs, query, jobTypes, jobSummary });
   });
 
   router.get('/settings', async (req, res) => {
+    const allowedSections = new Set(['overview', 'automation', 'criteria', 'expert']);
+    const section = allowedSections.has(req.query.section) ? req.query.section : 'overview';
     const result = await pool.query('select * from criteria_versions order by version_number desc');
     const logs = await pool.query('select * from llm_logs order by created_at desc limit 30');
     const activeCriteria = result.rows.find((item) => item.status === 'active');
@@ -98,7 +107,7 @@ export function createPageRouter({ pool, config, imageLoader = downloadImage }) 
     `)).rows[0];
     res.render('settings', {
       title: req.t('settings'), active: 'settings', criteria: result.rows, llmLogs: logs.rows,
-      llmPrompts, criteriaAutomation, automationStatus
+      llmPrompts, criteriaAutomation, automationStatus, section
     });
   });
 
